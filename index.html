@@ -84,7 +84,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <div class="card">
     <h2>Material</h2>
     <div id="c-fils"></div>
-    <button class="sec full" id="c-addfil">+ Adicionar outro filamento</button>
+    <button class="sec full" id="c-addfil">+ Adicionar outro filamento (até 4 cores)</button>
     <div class="hint" id="c-nofil"></div>
   </div>
 
@@ -316,7 +316,10 @@ document.addEventListener('input', e => {
   else return;
   save(); renderResult();
 });
-$('#c-addfil').onclick = () => { S.calc.lines.push({ fil: '', g: '' }); save(); renderCalc(); };
+$('#c-addfil').onclick = () => {
+  if (S.calc.lines.length >= 4) { alert('A impressora imprime com até 4 cores ou filamentos.'); return; }
+  S.calc.lines.push({ fil: '', g: '' }); save(); renderCalc();
+};
 $('#c-fils').addEventListener('click', e => {
   const i = e.target.dataset.rm; if (i === undefined) return;
   S.calc.lines.splice(+i, 1); save(); renderCalc();
