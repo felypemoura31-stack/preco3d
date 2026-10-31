@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <title>Preço 3D</title>
 <style>
 :root{
@@ -61,6 +62,12 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 
 <!-- CALCULADORA -->
 <section id="calc" class="on">
+  <div class="card">
+    <h2>Importar arquivo</h2>
+    <button class="sec full" id="c-import">📂 Escolher .3mf, .gcode ou .stl</button>
+    <input type="file" id="c-file" accept=".3mf,.gcode,.stl" hidden>
+    <div class="hint">.3mf ou .gcode fatiados trazem tempo e gramas exatos. .stl dá só uma estimativa de peso, sem tempo.</div>
+  </div>
   <div class="card">
     <h2>Peça</h2>
     <label>Nome da peça (opcional)</label>
@@ -120,6 +127,14 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 
 <!-- CONFIG -->
 <section id="cfg">
+  <div class="card">
+    <h2>Estimativa por STL</h2>
+    <div class="row">
+      <div><label>Densidade (g/cm³)</label><input id="s-density" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Preenchimento (%)</label><input id="s-infill" type="number" inputmode="decimal" min="0" max="100" step="any"></div>
+    </div>
+    <div class="hint">Só para .stl. PLA ≈ 1,24; ABS ≈ 1,04. A estimativa é grosseira (pode errar 30% ou mais). Para um valor exato, use o .3mf ou .gcode fatiado.</div>
+  </div>
   <div class="card">
     <h2>Energia e custos</h2>
     <label>Preço do kWh (R$)</label>
@@ -192,7 +207,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const DEFAULT = {
   filaments: [],
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
-  settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, margin: 100, fee: 0 },
+  settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, density: 1.24, infill: 15, margin: 100, fee: 0 },
   calc: { name: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: []
 };
@@ -355,7 +370,7 @@ $('#f-list').addEventListener('click', e => {
 });
 
 /* ---------- Config ---------- */
-const sMap = { 's-kwh': 'kwh', 's-machine': 'machine', 's-labor': 'labor', 's-maint': 'maint', 's-finish': 'finish', 's-fail': 'fail', 's-margin': 'margin', 's-fee': 'fee' };
+const sMap = { 's-kwh': 'kwh', 's-machine': 'machine', 's-labor': 'labor', 's-maint': 'maint', 's-finish': 'finish', 's-density': 'density', 's-infill': 'infill', 's-fail': 'fail', 's-margin': 'margin', 's-fee': 'fee' };
 function renderCfg() {
   for (const id in sMap) $('#' + id).value = S.settings[sMap[id]];
   $('#p-list').innerHTML = S.printers.length ? S.printers.map(p => `
@@ -405,6 +420,105 @@ $('#h-list').addEventListener('click', e => {
   S.history = S.history.filter(h => h.id !== id); save(); renderHist();
 });
 $('#h-clear').onclick = () => { if (S.history.length && confirm('Apagar todo o histórico?')) { S.history = []; save(); renderHist(); } };
+
+/* ---------- Importar arquivo do fatiador / modelo ---------- */
+function parseTime(txt) {
+  const mult = { d: 86400, h: 3600, m: 60, s: 1 };
+  let s = 0, m;
+  const re = /(\d+(?:\.\d+)?)\s*([dhms])/gi;
+  while ((m = re.exec(txt))) s += parseFloat(m[1]) * mult[m[2].toLowerCase()];
+  return s;
+}
+
+function readGcode(text) {
+  const time = text.match(/total estimated time:\s*([^\r\n]+)/i) || text.match(/estimated printing time[^=\r\n]*=\s*([^\r\n]+)/i);
+  const grams = text.match(/total filament weight \[g\]\s*:\s*([\d.]+)/i) || text.match(/filament used \[g\]\s*=\s*([\d.,\s]+)/i);
+  if (!time && !grams) throw new Error('Este G-code não tem tempo nem peso. Exporte pelo fatiador.');
+  const gs = grams ? grams[1].split(',').map(num) : [];
+  return {
+    seconds: time ? parseTime(time[1]) : 0,
+    grams: gs.reduce((a, b) => a + b, 0),
+    filaments: gs.map(g => ({ g }))
+  };
+}
+
+async function readThreeMF(file) {
+  const zip = await JSZip.loadAsync(file);
+  const entry = zip.file('Metadata/slice_info.config');
+  if (!entry) throw new Error('Este 3MF não está fatiado. No fatiador, exporte o arquivo fatiado (.gcode.3mf) ou envie o .stl.');
+  const doc = new DOMParser().parseFromString(await entry.async('text'), 'application/xml');
+  const plate = doc.querySelector('plate') || doc;
+  const meta = k => {
+    const el = [...plate.children].find(e => e.tagName === 'metadata' && e.getAttribute('key') === k);
+    return el ? num(el.getAttribute('value')) : 0;
+  };
+  const filaments = [...plate.querySelectorAll('filament')].map(f => ({ type: f.getAttribute('type') || '', g: num(f.getAttribute('used_g')) }));
+  return { seconds: meta('prediction'), grams: meta('weight') || filaments.reduce((a, f) => a + f.g, 0), filaments };
+}
+
+function readStl(buf) {
+  const dv = new DataView(buf);
+  const count = buf.byteLength >= 84 ? dv.getUint32(80, true) : 0;
+  const tris = [];
+  if (buf.byteLength === 84 + count * 50) {
+    for (let i = 0; i < count; i++) {
+      const o = 84 + i * 50 + 12, v = [];
+      for (let k = 0; k < 9; k++) v.push(dv.getFloat32(o + k * 4, true));
+      tris.push(v);
+    }
+  } else {
+    const txt = new TextDecoder().decode(buf);
+    const nums = [...txt.matchAll(/vertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/g)].flatMap(m => [+m[1], +m[2], +m[3]]);
+    for (let i = 0; i + 9 <= nums.length; i += 9) tris.push(nums.slice(i, i + 9));
+  }
+  if (!tris.length) throw new Error('Não consegui ler este STL.');
+  // volume por tetraedros com a origem (mm³), depois cm³
+  let vol = 0;
+  for (const [ax, ay, az, bx, by, bz, cx, cy, cz] of tris)
+    vol += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
+  return { cm3: Math.abs(vol) / 1000 };
+}
+
+$('#c-import').onclick = () => $('#c-file').click();
+$('#c-file').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const name = f.name.toLowerCase();
+  try {
+    let info;
+    if (name.endsWith('.3mf')) info = await readThreeMF(f);
+    else if (name.endsWith('.gcode')) info = readGcode(await f.text());
+    else if (name.endsWith('.stl')) {
+      const { cm3 } = readStl(await f.arrayBuffer());
+      const st = S.settings;
+      const grams = cm3 * st.density * (0.25 + 0.75 * st.infill / 100);
+      info = { seconds: 0, grams, filaments: [{ g: grams }], estimate: true, cm3 };
+    } else { alert('Use arquivos .3mf, .gcode ou .stl.'); return; }
+
+    const c = S.calc;
+    if (info.seconds) {
+      c.h = String(Math.floor(info.seconds / 3600));
+      c.m = String(Math.round(info.seconds % 3600 / 60));
+    }
+    const used = info.filaments.filter(x => x.g > 0);
+    c.lines = (used.length ? used : [{ g: info.grams }]).map((x, i) => ({
+      fil: (c.lines[i] && c.lines[i].fil) || '',
+      g: String(Math.round(x.g * 10) / 10)
+    }));
+    if (!c.name) c.name = f.name.replace(/(\.gcode)?\.(3mf|gcode|stl)$/i, '');
+    save(); renderCalc();
+
+    if (info.estimate) {
+      alert(`Estimativa pelo STL: ~${info.grams.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} g (volume ${info.cm3.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} cm³). O tempo não sai do STL: preencha manualmente.`);
+    } else {
+      const t = info.seconds ? `${Math.floor(info.seconds / 3600)}h ${Math.round(info.seconds % 3600 / 60)}min` : 'sem tempo (preencha)';
+      alert(`Importado: ${t}, ${info.grams.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g.`);
+    }
+  } catch (err) {
+    alert(err.message || 'Não foi possível ler este arquivo.');
+  }
+};
 
 /* ---------- Init ---------- */
 load(); renderCalc(); renderFils(); renderCfg();
