@@ -126,11 +126,15 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     <input id="s-kwh" type="number" inputmode="decimal" min="0" step="any">
     <div class="hint">Veja na sua conta de luz (com impostos). Divida o valor da fatura (sem iluminação pública) pelos kWh consumidos.</div>
     <div class="row">
-      <div><label>Desgaste da máquina (R$/h)</label><input id="s-machine" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Depreciação da máquina (R$/h)</label><input id="s-machine" type="number" inputmode="decimal" min="0" step="any"></div>
       <div><label>Mão de obra (R$/h)</label><input id="s-labor" type="number" inputmode="decimal" min="0" step="any"></div>
     </div>
     <div class="row">
-      <div><label>Margem de falhas (%)</label><input id="s-fail" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Manutenção (% do material)</label><input id="s-maint" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Acabamento (% do material)</label><input id="s-finish" type="number" inputmode="decimal" min="0" step="any"></div>
+    </div>
+    <div class="row">
+      <div><label>Margem de falhas (% do material)</label><input id="s-fail" type="number" inputmode="decimal" min="0" step="any"></div>
       <div><label>Lucro (%)</label><input id="s-margin" type="number" inputmode="decimal" min="0" step="any"></div>
     </div>
     <label>Taxa de venda / imposto (%)</label>
@@ -188,7 +192,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const DEFAULT = {
   filaments: [],
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
-  settings: { kwh: 1.17, machine: 1, labor: 0, fail: 5, margin: 100, fee: 0 },
+  settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, margin: 100, fee: 0 },
   calc: { name: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: []
 };
@@ -232,15 +236,16 @@ function compute(c) {
   const machine = hours * st.machine;
   const labor = (num(c.work) / 60) * st.labor;
   const extra = num(c.extra);
-  const base = material + energy + machine + labor + extra;
-  const failure = (material + energy) * (st.fail / 100);
-  const cost = base + failure;
+  const maint = material * (st.maint / 100);
+  const finish = material * (st.finish / 100);
+  const failure = material * (st.fail / 100);
+  const cost = material + energy + machine + labor + extra + maint + finish + failure;
   const profit = cost * (st.margin / 100);
   const subtotal = cost + profit;
   const feePct = Math.min(st.fee, 95) / 100;
   const price = subtotal / (1 - feePct);
   const fee = price - subtotal;
-  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, failure, cost, profit, fee, price,
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, price,
     printerName: printer ? printer.name : '' };
 }
 
@@ -275,7 +280,9 @@ function renderResult() {
     ${r.machine ? L('Desgaste da máquina', r.machine) : ''}
     ${r.labor ? L('Mão de obra', r.labor) : ''}
     ${r.extra ? L('Outros custos', r.extra) : ''}
-    ${r.failure ? L('Margem de falhas', r.failure, ` <small>(${S.settings.fail}%)</small>`) : ''}
+    ${r.maint ? L('Manutenção', r.maint, ` <small>(${S.settings.maint}% do material)</small>`) : ''}
+    ${r.finish ? L('Acabamento', r.finish, ` <small>(${S.settings.finish}% do material)</small>`) : ''}
+    ${r.failure ? L('Margem de falhas', r.failure, ` <small>(${S.settings.fail}% do material)</small>`) : ''}
     ${L('<b>Custo total</b>', r.cost)}
     ${L('Lucro', r.profit, ` <small>(${S.settings.margin}%)</small>`)}
     ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
@@ -348,7 +355,7 @@ $('#f-list').addEventListener('click', e => {
 });
 
 /* ---------- Config ---------- */
-const sMap = { 's-kwh': 'kwh', 's-machine': 'machine', 's-labor': 'labor', 's-fail': 'fail', 's-margin': 'margin', 's-fee': 'fee' };
+const sMap = { 's-kwh': 'kwh', 's-machine': 'machine', 's-labor': 'labor', 's-maint': 'maint', 's-finish': 'finish', 's-fail': 'fail', 's-margin': 'margin', 's-fee': 'fee' };
 function renderCfg() {
   for (const id in sMap) $('#' + id).value = S.settings[sMap[id]];
   $('#p-list').innerHTML = S.printers.length ? S.printers.map(p => `
