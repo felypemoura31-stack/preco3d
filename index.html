@@ -124,7 +124,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     <h2>Energia e custos</h2>
     <label>Preço do kWh (R$)</label>
     <input id="s-kwh" type="number" inputmode="decimal" min="0" step="any">
-    <div class="hint">Veja na sua conta de luz (com impostos). Média no Brasil: ~R$ 0,90.</div>
+    <div class="hint">Veja na sua conta de luz (com impostos). Divida o valor da fatura (sem iluminação pública) pelos kWh consumidos.</div>
     <div class="row">
       <div><label>Desgaste da máquina (R$/h)</label><input id="s-machine" type="number" inputmode="decimal" min="0" step="any"></div>
       <div><label>Mão de obra (R$/h)</label><input id="s-labor" type="number" inputmode="decimal" min="0" step="any"></div>
@@ -146,7 +146,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
       <input id="p-watts" type="number" inputmode="decimal" min="0" step="any" placeholder="Consumo médio (W)">
     </div>
     <button class="full" id="p-add">+ Adicionar impressora</button>
-    <div class="hint">Use o consumo médio durante a impressão (ex.: Ender 3 ≈ 120–150 W com mesa aquecida; o pico na tabela é maior). Ideal medir com um wattímetro.</div>
+    <div class="hint">Use o consumo médio durante a impressão (ex.: Bambu Lab A1 ≈ 100–150 W; o pico na tabela é maior). Ideal medir com um wattímetro.</div>
   </div>
 
   <div class="card">
@@ -187,8 +187,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 const DEFAULT = {
   filaments: [],
-  printers: [{ id: uid(), name: 'Minha impressora', watts: 150 }],
-  settings: { kwh: 0.9, machine: 1, labor: 0, fail: 5, margin: 100, fee: 0 },
+  printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
+  settings: { kwh: 1.17, machine: 1, labor: 0, fail: 5, margin: 100, fee: 0 },
   calc: { name: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: []
 };
