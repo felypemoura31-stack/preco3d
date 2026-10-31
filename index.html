@@ -62,6 +62,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 
 <!-- CALCULADORA -->
 <section id="calc" class="on">
+  <div class="card" id="c-editbar" style="display:none;align-items:center;justify-content:space-between;border-color:var(--primary)">
+    <b>✏️ Editando orçamento</b>
+    <button class="sec" id="c-cancel">Cancelar</button>
+  </div>
   <div class="card">
     <h2>Importar arquivo</h2>
     <button class="sec full" id="c-import">📂 Escolher .3mf, .gcode ou .stl</button>
@@ -266,6 +270,8 @@ function compute(c) {
 
 function renderCalc() {
   const c = S.calc;
+  $('#c-editbar').style.display = editing ? 'flex' : 'none';
+  $('#c-save').textContent = editing ? '💾 Atualizar orçamento' : '💾 Salvar no histórico';
   // impressoras
   $('#c-printer').innerHTML = S.printers.map(p => `<option value="${p.id}">${esc(p.name)} (${p.watts} W)</option>`).join('') || '<option value="">Cadastre em Config</option>';
   if (!S.printers.find(p => p.id === c.printer)) c.printer = S.printers[0]?.id || '';
@@ -324,13 +330,38 @@ $('#c-fils').addEventListener('click', e => {
   const i = e.target.dataset.rm; if (i === undefined) return;
   S.calc.lines.splice(+i, 1); save(); renderCalc();
 });
+// editing: id do orçamento em edição; draft: rascunho guardado antes de editar
+let editing = null, draft = null;
+const copyCalc = c => JSON.parse(JSON.stringify(c));
 $('#c-save').onclick = () => {
   const r = compute(S.calc);
   if (!r.price) { alert('Preencha tempo e material antes de salvar.'); return; }
-  S.history.unshift({ id: uid(), date: new Date().toISOString(), name: S.calc.name || 'Sem nome', r });
+  const name = S.calc.name || 'Sem nome';
+  if (editing) {
+    const i = S.history.findIndex(h => h.id === editing);
+    if (i < 0) { alert('Este orçamento não existe mais.'); cancelEdit(); return; }
+    S.history[i] = { ...S.history[i], name, r, calc: copyCalc(S.calc), edited: new Date().toISOString() };
+    cancelEdit(); alert('Orçamento atualizado!'); return;
+  }
+  S.history.unshift({ id: uid(), date: new Date().toISOString(), name, r, calc: copyCalc(S.calc) });
   S.history = S.history.slice(0, 200);
   save(); alert('Salvo no histórico!');
 };
+function startEdit(id) {
+  const h = S.history.find(x => x.id === id);
+  if (!h || !h.calc) { alert('Este orçamento foi salvo numa versão antiga e não pode ser editado. Refaça o cálculo e salve de novo.'); return; }
+  if (!editing) draft = copyCalc(S.calc);
+  editing = id;
+  S.calc = Object.assign({}, DEFAULT.calc, copyCalc(h.calc));
+  if (!S.calc.lines || !S.calc.lines.length) S.calc.lines = [{ fil: '', g: '' }];
+  save(); go('calc');
+}
+function cancelEdit() {
+  if (draft) S.calc = draft;
+  editing = null; draft = null;
+  save(); renderCalc();
+}
+$('#c-cancel').onclick = cancelEdit;
 
 /* ---------- Filamentos ---------- */
 function renderFils() {
@@ -415,12 +446,14 @@ function renderHist() {
     <div class="item">
       <div class="info"><b>${esc(h.name)}</b><small>${new Date(h.date).toLocaleDateString('pt-BR')} · ${h.r.grams} g · ${(h.r.hours).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h</small></div>
       <div style="text-align:right"><b>${brl(h.r.price)}</b><small>custo ${brl(h.r.cost)}</small></div>
+      <button class="sec" data-hedit="${h.id}">Editar</button>
       <button class="del" data-hdel="${h.id}">✕</button>
     </div>`).join('') : '<div class="empty">Nada salvo ainda.</div>';
 }
 $('#h-list').addEventListener('click', e => {
-  const id = e.target.dataset.hdel; if (!id) return;
-  S.history = S.history.filter(h => h.id !== id); save(); renderHist();
+  const ed = e.target.dataset.hedit, del = e.target.dataset.hdel;
+  if (ed) startEdit(ed);
+  if (del) { S.history = S.history.filter(h => h.id !== del); save(); renderHist(); }
 });
 $('#h-clear').onclick = () => { if (S.history.length && confirm('Apagar todo o histórico?')) { S.history = []; save(); renderHist(); } };
 
