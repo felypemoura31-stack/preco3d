@@ -1,0 +1,15 @@
+{
+  "name": "Preço 3D - Calculadora de impressão 3D",
+  "short_name": "Preço 3D",
+  "description": "Calcule o preço de peças impressas em 3D: filamento, energia, tempo e margem.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Preço 3D">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Preço 3D</title>
+<style>
+:root{
+  --bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --primary:#2563eb;--primary-text:#fff;--accent:#16a34a;--danger:#dc2626;--input:#f8fafc;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0b1120;--card:#162033;--text:#e8eef9;--muted:#94a3b8;--line:#26334a;--primary:#3b82f6;--accent:#22c55e;--input:#0f1829;--danger:#f87171}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:5;background:#0f172a;color:#fff;padding:14px 16px;padding-top:calc(14px + env(safe-area-inset-top));font-weight:700;font-size:18px}
+main{max-width:640px;margin:0 auto;padding:12px 16px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+h2{font-size:15px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input,select{width:100%;padding:11px 12px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--line);border-radius:10px}
+input:focus,select:focus{outline:2px solid var(--primary);border-color:transparent}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+button{font:inherit;border:0;border-radius:10px;padding:11px 14px;background:var(--primary);color:var(--primary-text);font-weight:600;cursor:pointer}
+button.sec{background:transparent;color:var(--primary);border:1px solid var(--line)}
+button.del{background:transparent;color:var(--danger);padding:6px 10px}
+button.full{width:100%;margin-top:12px}
+.item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border:0}
+.item .info{flex:1;min-width:0}.item b{display:block}
+.item small{color:var(--muted)}
+.dot{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);flex:none}
+.line{display:flex;justify-content:space-between;padding:5px 0}
+.line span:first-child{color:var(--muted)}
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--line);margin-top:8px;padding-top:10px}
+.big{font-size:30px;font-weight:800;color:var(--accent)}
+.fil{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
+.fil .grow{flex:2}.fil .g{flex:1}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;color:var(--muted);border-radius:0;padding:12px 4px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button .ic{font-size:20px}
+nav button.on{color:var(--primary)}
+.empty{color:var(--muted);text-align:center;padding:18px 0}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,420px);background:var(--card);color:var(--text)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+</style>
+</head>
+<body>
+<header>🖨️ Preço 3D</header>
+<main>
+
+<!-- CALCULADORA -->
+<section id="calc" class="on">
+  <div class="card">
+    <h2>Peça</h2>
+    <label>Nome da peça (opcional)</label>
+    <input id="c-name" placeholder="Ex.: Suporte de celular">
+    <label>Impressora</label>
+    <select id="c-printer"></select>
+    <label>Tempo de impressão</label>
+    <div class="row">
+      <input id="c-h" type="number" inputmode="decimal" min="0" step="any" placeholder="Horas">
+      <input id="c-m" type="number" inputmode="decimal" min="0" step="any" placeholder="Minutos">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Material</h2>
+    <div id="c-fils"></div>
+    <button class="sec full" id="c-addfil">+ Adicionar outro filamento</button>
+    <div class="hint" id="c-nofil"></div>
+  </div>
+
+  <div class="card">
+    <h2>Extras</h2>
+    <div class="row">
+      <div><label>Mão de obra (min)</label><input id="c-work" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></div>
+      <div><label>Outros custos (R$)</label><input id="c-extra" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></div>
+    </div>
+    <div class="hint">Outros custos: embalagem, parafusos, tinta, frete…</div>
+  </div>
+
+  <div class="card" id="c-result"></div>
+  <button class="full" id="c-save">💾 Salvar no histórico</button>
+</section>
+
+<!-- FILAMENTOS -->
+<section id="fils">
+  <div class="card">
+    <h2>Cadastrar filamento</h2>
+    <input type="hidden" id="f-id">
+    <label>Nome / marca</label>
+    <input id="f-name" placeholder="Ex.: Voolt3D PLA Preto">
+    <div class="row">
+      <div><label>Material</label>
+        <select id="f-mat"><option>PLA</option><option>PLA+</option><option>PETG</option><option>ABS</option><option>ASA</option><option>TPU</option><option>Nylon</option><option>Outro</option></select></div>
+      <div><label>Cor</label><input id="f-color" type="color" value="#222222" style="padding:3px;height:44px"></div>
+    </div>
+    <div class="row">
+      <div><label>Preço do rolo (R$)</label><input id="f-price" type="number" inputmode="decimal" min="0" step="any" placeholder="120"></div>
+      <div><label>Peso do rolo (g)</label><input id="f-weight" type="number" inputmode="decimal" min="1" step="any" value="1000"></div>
+    </div>
+    <div class="row">
+      <button id="f-save" class="full">Salvar filamento</button>
+      <button id="f-cancel" class="sec full" style="display:none">Cancelar</button>
+    </div>
+  </div>
+  <div class="card"><h2>Meus filamentos</h2><div id="f-list"></div></div>
+</section>
+
+<!-- CONFIG -->
+<section id="cfg">
+  <div class="card">
+    <h2>Energia e custos</h2>
+    <label>Preço do kWh (R$)</label>
+    <input id="s-kwh" type="number" inputmode="decimal" min="0" step="any">
+    <div class="hint">Veja na sua conta de luz (com impostos). Média no Brasil: ~R$ 0,90.</div>
+    <div class="row">
+      <div><label>Desgaste da máquina (R$/h)</label><input id="s-machine" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Mão de obra (R$/h)</label><input id="s-labor" type="number" inputmode="decimal" min="0" step="any"></div>
+    </div>
+    <div class="row">
+      <div><label>Margem de falhas (%)</label><input id="s-fail" type="number" inputmode="decimal" min="0" step="any"></div>
+      <div><label>Lucro (%)</label><input id="s-margin" type="number" inputmode="decimal" min="0" step="any"></div>
+    </div>
+    <label>Taxa de venda / imposto (%)</label>
+    <input id="s-fee" type="number" inputmode="decimal" min="0" step="any">
+    <div class="hint">Taxa de marketplace, cartão ou imposto. É descontada do preço final.</div>
+  </div>
+
+  <div class="card">
+    <h2>Impressoras</h2>
+    <div id="p-list"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="p-name" placeholder="Nome (ex.: Ender 3)">
+      <input id="p-watts" type="number" inputmode="decimal" min="0" step="any" placeholder="Consumo médio (W)">
+    </div>
+    <button class="full" id="p-add">+ Adicionar impressora</button>
+    <div class="hint">Use o consumo médio durante a impressão (ex.: Ender 3 ≈ 120–150 W com mesa aquecida; o pico na tabela é maior). Ideal medir com um wattímetro.</div>
+  </div>
+
+  <div class="card">
+    <h2>Backup</h2>
+    <div class="row">
+      <button class="sec" id="b-export">Exportar</button>
+      <button class="sec" id="b-import">Importar</button>
+    </div>
+    <input type="file" id="b-file" accept="application/json" hidden>
+    <div class="hint">Os dados ficam salvos só neste aparelho. Exporte para levar para outro dispositivo.</div>
+  </div>
+</section>
+
+<!-- HISTÓRICO -->
+<section id="hist">
+  <div class="card"><h2>Histórico</h2><div id="h-list"></div></div>
+  <button class="sec full" id="h-clear">Limpar histórico</button>
+</section>
+
+</main>
+
+<nav>
+  <button data-tab="calc" class="on"><span class="ic">🧮</span>Calcular</button>
+  <button data-tab="fils"><span class="ic">🧵</span>Filamentos</button>
+  <button data-tab="hist"><span class="ic">🗂️</span>Histórico</button>
+  <button data-tab="cfg"><span class="ic">⚙️</span>Config</button>
+</nav>
+
+<dialog id="dlg"><div id="dlg-body"></div><button class="full" onclick="this.closest('dialog').close()">Fechar</button></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const KEY = 'preco3d.v1';
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const brl = n => (isFinite(n) ? n : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const DEFAULT = {
+  filaments: [],
+  printers: [{ id: uid(), name: 'Minha impressora', watts: 150 }],
+  settings: { kwh: 0.9, machine: 1, labor: 0, fail: 5, margin: 100, fee: 0 },
+  calc: { name: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
+  history: []
+};
+let S;
+function load() {
+  try { S = JSON.parse(localStorage.getItem(KEY)); } catch { S = null; }
+  S = Object.assign(structuredClone(DEFAULT), S || {});
+  S.settings = Object.assign({}, DEFAULT.settings, S.settings);
+  S.calc = Object.assign({}, DEFAULT.calc, S.calc);
+  if (!S.calc.lines || !S.calc.lines.length) S.calc.lines = [{ fil: '', g: '' }];
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { alert('Não foi possível salvar os dados neste navegador.'); } }
+
+/* ---------- Abas ---------- */
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
+function go(t) {
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === t));
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  if (t === 'calc') renderCalc();
+  if (t === 'hist') renderHist();
+  scrollTo(0, 0);
+}
+
+/* ---------- Cálculo ---------- */
+function compute(c) {
+  const st = S.settings;
+  const printer = S.printers.find(p => p.id === c.printer);
+  const hours = num(c.h) + num(c.m) / 60;
+  let material = 0, grams = 0;
+  const mats = [];
+  for (const l of c.lines) {
+    const f = S.filaments.find(x => x.id === l.fil);
+    const g = num(l.g);
+    if (!f || !g) continue;
+    const cost = g * (f.price / f.weight);
+    material += cost; grams += g;
+    mats.push({ name: f.name, g, cost });
+  }
+  const kWh = printer ? (printer.watts / 1000) * hours : 0;
+  const energy = kWh * st.kwh;
+  const machine = hours * st.machine;
+  const labor = (num(c.work) / 60) * st.labor;
+  const extra = num(c.extra);
+  const base = material + energy + machine + labor + extra;
+  const failure = (material + energy) * (st.fail / 100);
+  const cost = base + failure;
+  const profit = cost * (st.margin / 100);
+  const subtotal = cost + profit;
+  const feePct = Math.min(st.fee, 95) / 100;
+  const price = subtotal / (1 - feePct);
+  const fee = price - subtotal;
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, failure, cost, profit, fee, price,
+    printerName: printer ? printer.name : '' };
+}
+
+function renderCalc() {
+  const c = S.calc;
+  // impressoras
+  $('#c-printer').innerHTML = S.printers.map(p => `<option value="${p.id}">${esc(p.name)} (${p.watts} W)</option>`).join('') || '<option value="">Cadastre em Config</option>';
+  if (!S.printers.find(p => p.id === c.printer)) c.printer = S.printers[0]?.id || '';
+  $('#c-printer').value = c.printer;
+  $('#c-name').value = c.name; $('#c-h').value = c.h; $('#c-m').value = c.m;
+  $('#c-work').value = c.work; $('#c-extra').value = c.extra;
+  // linhas de filamento
+  const opts = '<option value="">Selecione…</option>' + S.filaments.map(f => `<option value="${f.id}">${esc(f.name)} — ${brl(f.price / f.weight * 1000)}/kg</option>`).join('');
+  $('#c-fils').innerHTML = c.lines.map((l, i) => `
+    <div class="fil">
+      <div class="grow"><label style="margin-top:0">Filamento</label><select data-i="${i}" data-k="fil">${opts}</select></div>
+      <div class="g"><label style="margin-top:0">Gramas</label><input data-i="${i}" data-k="g" type="number" inputmode="decimal" min="0" step="any" value="${esc(l.g)}"></div>
+      ${c.lines.length > 1 ? `<button class="del" data-rm="${i}">✕</button>` : ''}
+    </div>`).join('');
+  c.lines.forEach((l, i) => { const s = document.querySelector(`select[data-i="${i}"]`); if (s) s.value = l.fil; });
+  $('#c-nofil').textContent = S.filaments.length ? '' : 'Nenhum filamento cadastrado. Vá na aba Filamentos.';
+  renderResult();
+}
+
+function renderResult() {
+  const r = compute(S.calc);
+  const L = (a, b, extra = '') => `<div class="line"><span>${a}${extra}</span><span>${brl(b)}</span></div>`;
+  $('#c-result').innerHTML = `
+    <h2>Resultado</h2>
+    ${L('Material', r.material, ` <small>(${r.grams.toLocaleString('pt-BR')} g)</small>`)}
+    ${L('Energia', r.energy, ` <small>(${r.kWh.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} kWh)</small>`)}
+    ${r.machine ? L('Desgaste da máquina', r.machine) : ''}
+    ${r.labor ? L('Mão de obra', r.labor) : ''}
+    ${r.extra ? L('Outros custos', r.extra) : ''}
+    ${r.failure ? L('Margem de falhas', r.failure, ` <small>(${S.settings.fail}%)</small>`) : ''}
+    ${L('<b>Custo total</b>', r.cost)}
+    ${L('Lucro', r.profit, ` <small>(${S.settings.margin}%)</small>`)}
+    ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
+    <div class="total"><span>Preço de venda</span><span class="big">${brl(r.price)}</span></div>`;
+}
+
+document.addEventListener('input', e => {
+  const t = e.target, c = S.calc;
+  if (t.id === 'c-name') c.name = t.value;
+  else if (t.id === 'c-printer') c.printer = t.value;
+  else if (t.id === 'c-h') c.h = t.value;
+  else if (t.id === 'c-m') c.m = t.value;
+  else if (t.id === 'c-work') c.work = t.value;
+  else if (t.id === 'c-extra') c.extra = t.value;
+  else if (t.dataset && t.dataset.k) c.lines[+t.dataset.i][t.dataset.k] = t.value;
+  else return;
+  save(); renderResult();
+});
+$('#c-addfil').onclick = () => { S.calc.lines.push({ fil: '', g: '' }); save(); renderCalc(); };
+$('#c-fils').addEventListener('click', e => {
+  const i = e.target.dataset.rm; if (i === undefined) return;
+  S.calc.lines.splice(+i, 1); save(); renderCalc();
+});
+$('#c-save').onclick = () => {
+  const r = compute(S.calc);
+  if (!r.price) { alert('Preencha tempo e material antes de salvar.'); return; }
+  S.history.unshift({ id: uid(), date: new Date().toISOString(), name: S.calc.name || 'Sem nome', r });
+  S.history = S.history.slice(0, 200);
+  save(); alert('Salvo no histórico!');
+};
+
+/* ---------- Filamentos ---------- */
+function renderFils() {
+  $('#f-list').innerHTML = S.filaments.length ? S.filaments.map(f => `
+    <div class="item">
+      <span class="dot" style="background:${esc(f.color)}"></span>
+      <div class="info"><b>${esc(f.name)}</b><small>${esc(f.material)} · ${brl(f.price)} / ${f.weight} g · ${brl(f.price / f.weight * 1000)}/kg</small></div>
+      <button class="sec" data-edit="${f.id}">Editar</button>
+      <button class="del" data-del="${f.id}">✕</button>
+    </div>`).join('') : '<div class="empty">Nenhum filamento ainda.</div>';
+}
+function resetFilForm() {
+  ['#f-id', '#f-name', '#f-price'].forEach(s => $(s).value = '');
+  $('#f-weight').value = 1000; $('#f-color').value = '#222222'; $('#f-mat').value = 'PLA';
+  $('#f-save').textContent = 'Salvar filamento'; $('#f-cancel').style.display = 'none';
+}
+$('#f-save').onclick = () => {
+  const name = $('#f-name').value.trim(), price = num($('#f-price').value), weight = num($('#f-weight').value);
+  if (!name || price <= 0 || weight <= 0) { alert('Informe nome, preço e peso do rolo.'); return; }
+  const f = { id: $('#f-id').value || uid(), name, material: $('#f-mat').value, color: $('#f-color').value, price, weight };
+  const i = S.filaments.findIndex(x => x.id === f.id);
+  if (i >= 0) S.filaments[i] = f; else S.filaments.push(f);
+  save(); resetFilForm(); renderFils();
+};
+$('#f-cancel').onclick = resetFilForm;
+$('#f-list').addEventListener('click', e => {
+  const ed = e.target.dataset.edit, del = e.target.dataset.del;
+  if (ed) {
+    const f = S.filaments.find(x => x.id === ed);
+    $('#f-id').value = f.id; $('#f-name').value = f.name; $('#f-mat').value = f.material;
+    $('#f-color').value = f.color; $('#f-price').value = f.price; $('#f-weight').value = f.weight;
+    $('#f-save').textContent = 'Atualizar filamento'; $('#f-cancel').style.display = '';
+    scrollTo(0, 0);
+  }
+  if (del && confirm('Excluir este filamento?')) {
+    S.filaments = S.filaments.filter(x => x.id !== del);
+    S.calc.lines.forEach(l => { if (l.fil === del) l.fil = ''; });
+    save(); renderFils();
+  }
+});
+
+/* ---------- Config ---------- */
+const sMap = { 's-kwh': 'kwh', 's-machine': 'machine', 's-labor': 'labor', 's-fail': 'fail', 's-margin': 'margin', 's-fee': 'fee' };
+function renderCfg() {
+  for (const id in sMap) $('#' + id).value = S.settings[sMap[id]];
+  $('#p-list').innerHTML = S.printers.length ? S.printers.map(p => `
+    <div class="item"><div class="info"><b>${esc(p.name)}</b><small>${p.watts} W</small></div>
+    <button class="del" data-pdel="${p.id}">✕</button></div>`).join('') : '<div class="empty">Nenhuma impressora.</div>';
+}
+for (const id in sMap) $('#' + id).addEventListener('input', e => { S.settings[sMap[id]] = num(e.target.value); save(); });
+$('#p-add').onclick = () => {
+  const name = $('#p-name').value.trim(), watts = num($('#p-watts').value);
+  if (!name || watts <= 0) { alert('Informe nome e consumo em watts.'); return; }
+  S.printers.push({ id: uid(), name, watts });
+  $('#p-name').value = ''; $('#p-watts').value = ''; save(); renderCfg();
+};
+$('#p-list').addEventListener('click', e => {
+  const id = e.target.dataset.pdel; if (!id) return;
+  if (S.printers.length === 1) { alert('Mantenha pelo menos uma impressora.'); return; }
+  if (confirm('Excluir esta impressora?')) { S.printers = S.printers.filter(p => p.id !== id); save(); renderCfg(); }
+});
+$('#b-export').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }));
+  a.download = 'preco3d-backup.json'; a.click(); URL.revokeObjectURL(a.href);
+};
+$('#b-import').onclick = () => $('#b-file').click();
+$('#b-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.filaments) || !Array.isArray(d.printers)) throw 0;
+    if (!confirm('Isso substitui os dados atuais. Continuar?')) return;
+    S = d; localStorage.setItem(KEY, JSON.stringify(S)); load(); renderCfg(); renderFils(); alert('Importado!');
+  } catch { alert('Arquivo de backup inválido.'); }
+  e.target.value = '';
+};
+
+/* ---------- Histórico ---------- */
+function renderHist() {
+  $('#h-list').innerHTML = S.history.length ? S.history.map(h => `
+    <div class="item">
+      <div class="info"><b>${esc(h.name)}</b><small>${new Date(h.date).toLocaleDateString('pt-BR')} · ${h.r.grams} g · ${(h.r.hours).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h</small></div>
+      <div style="text-align:right"><b>${brl(h.r.price)}</b><small>custo ${brl(h.r.cost)}</small></div>
+      <button class="del" data-hdel="${h.id}">✕</button>
+    </div>`).join('') : '<div class="empty">Nada salvo ainda.</div>';
+}
+$('#h-list').addEventListener('click', e => {
+  const id = e.target.dataset.hdel; if (!id) return;
+  S.history = S.history.filter(h => h.id !== id); save(); renderHist();
+});
+$('#h-clear').onclick = () => { if (S.history.length && confirm('Apagar todo o histórico?')) { S.history = []; save(); renderHist(); } };
+
+/* ---------- Init ---------- */
+load(); renderCalc(); renderFils(); renderCfg();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
