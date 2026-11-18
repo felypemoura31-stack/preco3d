@@ -54,6 +54,15 @@ nav button.on{color:var(--primary)}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
 dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,420px);background:var(--card);color:var(--text)}
 dialog::backdrop{background:rgba(0,0,0,.5)}
+#print-area{display:none}
+@media print{
+  body *{visibility:hidden}
+  #print-area,#print-area *{visibility:visible}
+  #print-area{display:block;position:absolute;left:0;top:0;width:100%;padding:20px;color:#000;background:#fff;font-size:13px}
+  #print-area table{width:100%;border-collapse:collapse;margin-bottom:8px}
+  #print-area td{border-bottom:1px solid #ddd;padding:4px 0}
+  #print-area h3{margin:14px 0 4px;font-size:14px}
+}
 </style>
 </head>
 <body>
@@ -101,8 +110,13 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     <div class="hint">Outros custos: embalagem, parafusos, tinta, frete…</div>
   </div>
 
+  <div class="card">
+    <h2>Desconto</h2>
+    <select id="c-disc"></select>
+  </div>
   <div class="card" id="c-result"></div>
   <button class="full" id="c-save">💾 Salvar no histórico</button>
+  <button class="sec full" id="c-pdf">📄 Exportar orçamento em PDF</button>
 </section>
 
 <!-- FILAMENTOS -->
@@ -127,6 +141,20 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     </div>
   </div>
   <div class="card"><h2>Meus filamentos</h2><div id="f-list"></div></div>
+</section>
+
+<!-- DESCONTOS -->
+<section id="disc">
+  <div class="card">
+    <h2>Novo desconto</h2>
+    <div class="row">
+      <div><label>Nome</label><input id="d-name" placeholder="Ex.: Pedido de 3 peças"></div>
+      <div><label>Desconto (%)</label><input id="d-pct" type="number" inputmode="decimal" min="0" max="100" step="any" placeholder="10"></div>
+    </div>
+    <button class="full" id="d-add">+ Adicionar desconto</button>
+  </div>
+  <div class="card"><h2>Meus descontos</h2><div id="d-list"></div></div>
+  <div class="hint">Escolha o desconto na calculadora. Ele reduz o preço de venda.</div>
 </section>
 
 <!-- CONFIG -->
@@ -195,6 +223,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <button data-tab="calc" class="on"><span class="ic">🧮</span>Calcular</button>
   <button data-tab="fils"><span class="ic">🧵</span>Filamentos</button>
   <button data-tab="hist"><span class="ic">🗂️</span>Histórico</button>
+  <button data-tab="disc"><span class="ic">🏷️</span>Descontos</button>
   <button data-tab="cfg"><span class="ic">⚙️</span>Config</button>
 </nav>
 
@@ -210,9 +239,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 const DEFAULT = {
   filaments: [],
+  discounts: [],
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
   settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, density: 1.24, infill: 15, margin: 100, fee: 0 },
-  calc: { name: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
+  calc: { name: '', disc: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: []
 };
 let S;
@@ -232,6 +262,7 @@ function go(t) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   if (t === 'calc') renderCalc();
   if (t === 'hist') renderHist();
+  if (t === 'disc') renderDisc();
   scrollTo(0, 0);
 }
 
@@ -262,9 +293,13 @@ function compute(c) {
   const profit = cost * (st.margin / 100);
   const subtotal = cost + profit;
   const feePct = Math.min(st.fee, 95) / 100;
-  const price = subtotal / (1 - feePct);
-  const fee = price - subtotal;
-  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, price,
+  const gross = subtotal / (1 - feePct);
+  const fee = gross - subtotal;
+  const disc = S.discounts.find(d => d.id === c.disc);
+  const discPct = disc ? Math.min(disc.pct, 100) : 0;
+  const discount = gross * discPct / 100;
+  const price = gross - discount;
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price,
     printerName: printer ? printer.name : '' };
 }
 
@@ -276,6 +311,9 @@ function renderCalc() {
   $('#c-printer').innerHTML = S.printers.map(p => `<option value="${p.id}">${esc(p.name)} (${p.watts} W)</option>`).join('') || '<option value="">Cadastre em Config</option>';
   if (!S.printers.find(p => p.id === c.printer)) c.printer = S.printers[0]?.id || '';
   $('#c-printer').value = c.printer;
+  if (!S.discounts.find(d => d.id === c.disc)) c.disc = '';
+  $('#c-disc').innerHTML = '<option value="">Sem desconto</option>' + S.discounts.map(d => `<option value="${d.id}">${esc(d.name)} (${d.pct}%)</option>`).join('');
+  $('#c-disc').value = c.disc;
   $('#c-name').value = c.name; $('#c-h').value = c.h; $('#c-m').value = c.m;
   $('#c-work').value = c.work; $('#c-extra').value = c.extra;
   // linhas de filamento
@@ -307,6 +345,7 @@ function renderResult() {
     ${L('<b>Custo total</b>', r.cost)}
     ${L('Lucro', r.profit, ` <small>(${S.settings.margin}%)</small>`)}
     ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
+    ${r.discount ? L('Desconto', -r.discount, ` <small>(${r.discPct}%)</small>`) : ''}
     <div class="total"><span>Preço de venda</span><span class="big">${brl(r.price)}</span></div>`;
 }
 
@@ -314,6 +353,7 @@ document.addEventListener('input', e => {
   const t = e.target, c = S.calc;
   if (t.id === 'c-name') c.name = t.value;
   else if (t.id === 'c-printer') c.printer = t.value;
+  else if (t.id === 'c-disc') c.disc = t.value;
   else if (t.id === 'c-h') c.h = t.value;
   else if (t.id === 'c-m') c.m = t.value;
   else if (t.id === 'c-work') c.work = t.value;
@@ -556,9 +596,72 @@ $('#c-file').onchange = async e => {
   }
 };
 
+/* ---------- Descontos ---------- */
+function renderDisc() {
+  $('#d-list').innerHTML = S.discounts.length ? S.discounts.map(d => `
+    <div class="item"><div class="info"><b>${esc(d.name)}</b><small>${d.pct}% de desconto</small></div>
+    <button class="del" data-ddel="${d.id}">✕</button></div>`).join('') : '<div class="empty">Nenhum desconto cadastrado.</div>';
+}
+$('#d-add').onclick = () => {
+  const name = $('#d-name').value.trim(), pct = num($('#d-pct').value);
+  if (!name || pct <= 0 || pct > 100) { alert('Informe um nome e um desconto entre 0 e 100%.'); return; }
+  S.discounts.push({ id: uid(), name, pct });
+  $('#d-name').value = ''; $('#d-pct').value = ''; save(); renderDisc();
+};
+$('#d-list').addEventListener('click', e => {
+  const id = e.target.dataset.ddel; if (!id) return;
+  S.discounts = S.discounts.filter(d => d.id !== id); save(); renderDisc();
+});
+
+/* ---------- PDF do orçamento (usa a impressão do navegador: "Salvar como PDF") ---------- */
+function exportPdf() {
+  const r = compute(S.calc);
+  if (!r.price) { alert('Preencha tempo e material antes de exportar.'); return; }
+  const c = S.calc, tot = Math.round(r.hours * 60);
+  const row = (a, b) => `<tr><td>${a}</td><td style="text-align:right">${b}</td></tr>`;
+  const opt = (label, v) => (v ? row(label, brl(v)) : '');
+  $('#print-area').innerHTML = `
+    <h1 style="font-size:20px;margin:0">Orçamento de impressão 3D</h1>
+    <p>${esc(c.name || 'Peça sem nome')} · ${new Date().toLocaleDateString('pt-BR')}</p>
+    <h3>Previsão</h3>
+    <table>
+      ${row('Tempo de impressão', `${Math.floor(tot / 60)}h ${tot % 60}min`)}
+      ${row('Material total', `${r.grams.toLocaleString('pt-BR')} g`)}
+      ${row('Impressora', esc(r.printerName || '-'))}
+    </table>
+    <h3>Material por filamento</h3>
+    <table>${r.mats.map(x => row(`${esc(x.name)}: ${x.g.toLocaleString('pt-BR')} g`, brl(x.cost))).join('')}</table>
+    <h3>Valores</h3>
+    <table>
+      ${row('Material', brl(r.material))}
+      ${row('Energia', brl(r.energy))}
+      ${opt('Depreciação da máquina', r.machine)}
+      ${opt('Mão de obra', r.labor)}
+      ${opt('Outros custos', r.extra)}
+      ${opt('Manutenção', r.maint)}
+      ${opt('Acabamento', r.finish)}
+      ${opt('Margem de falhas', r.failure)}
+      ${row('<b>Custo total</b>', `<b>${brl(r.cost)}</b>`)}
+      ${opt('Lucro', r.profit)}
+      ${opt('Taxa / imposto', r.fee)}
+      ${r.discount ? row(`Desconto (${r.discPct}%)`, '-' + brl(r.discount)) : ''}
+      ${row('<b>Preço final</b>', `<b>${brl(r.price)}</b>`)}
+    </table>
+    <h3>Observações</h3>
+    <ul>
+      <li>O tempo de impressão pode variar conforme a máquina, a velocidade e o fatiamento.</li>
+      <li>O consumo de material pode variar por causa de suportes, purga e possíveis falhas.</li>
+      <li>Os valores podem mudar se o preço do filamento ou da energia mudar.</li>
+      <li>Confirme o prazo de entrega antes de fechar o pedido.</li>
+    </ul>`;
+  window.print();
+}
+$('#c-pdf').onclick = exportPdf;
+
 /* ---------- Init ---------- */
-load(); renderCalc(); renderFils(); renderCfg();
+load(); renderCalc(); renderFils(); renderCfg(); renderDisc();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
+<div id="print-area"></div>
 </body>
 </html>
