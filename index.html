@@ -59,7 +59,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   @page{size:A4 portrait;margin:10mm}
   body > *:not(#print-area){display:none!important}
   body{margin:0;padding:0;background:#fff}
-  #print-area{display:block;color:#000;background:#fff;font:12px/1.4 system-ui,Segoe UI,Arial,sans-serif}
+  #print-area{display:block;height:277mm;overflow:hidden;color:#000;background:#fff;font:11px/1.35 system-ui,Segoe UI,Arial,sans-serif}
   .pdf-top{display:flex;align-items:center;gap:12px;background:#000;color:#fff;padding:10px 14px;border-radius:6px}
   .pdf-top img{height:54px;background:#fff;border-radius:4px;padding:4px}
   .pdf-top h1{margin:0;font-size:18px;flex:1;text-align:center}
@@ -71,8 +71,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   .pdf-info td:first-child{width:22%;color:#555}
   .pdf-sum{margin-top:10px;width:55%;margin-left:auto}
   .pdf-sum .final td{background:#000;color:#fff;font-weight:700;font-size:14px}
-  .pdf-photos{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .pdf-photos img{width:100%;max-height:80mm;object-fit:contain;border:1px solid #ccc;border-radius:6px}
+  .pdf-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .pdf-photos img{width:100%;height:45mm;object-fit:cover;border:1px solid #ccc;border-radius:6px}
   .pdf ul{padding-left:18px;margin:6px 0}
 }
 .pv{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
