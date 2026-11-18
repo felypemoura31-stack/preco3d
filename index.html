@@ -62,6 +62,20 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   #print-area table{width:100%;border-collapse:collapse;margin-bottom:8px}
   #print-area td{border-bottom:1px solid #ddd;padding:4px 0}
   #print-area h3{margin:14px 0 4px;font-size:14px}
+  .pdf{font-family:system-ui,Segoe UI,Arial,sans-serif;color:#000}
+  .pdf-head{display:flex;align-items:center;gap:16px;border-bottom:4px solid #000;padding-bottom:14px}
+  .pdf-head img{height:72px}
+  .pdf-head h1{margin:0;font-size:26px;letter-spacing:.04em;text-transform:uppercase}
+  .pdf-head p{margin:4px 0 0;color:#555}
+  .pdf-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+  .pdf-box{border:2px solid #000;border-radius:10px;padding:14px}
+  .pdf-box small,.pdf-disc small,.pdf-total small{display:block;color:#555;letter-spacing:.08em;font-size:11px}
+  .pdf-box b{font-size:22px}
+  .pdf-disc{border-left:4px solid #000;background:#f2f2f2;padding:10px 14px;margin:12px 0}
+  .pdf-total{background:#000;color:#fff;border-radius:10px;padding:18px;margin-top:12px}
+  .pdf-total small{color:#ccc}
+  .pdf-total b{font-size:34px}
+  .pdf ul{padding-left:18px;color:#333}
 }
 </style>
 </head>
@@ -618,43 +632,27 @@ function exportPdf() {
   const r = compute(S.calc);
   if (!r.price) { alert('Preencha tempo e material antes de exportar.'); return; }
   const c = S.calc, tot = Math.round(r.hours * 60);
-  const row = (a, b) => `<tr><td>${a}</td><td style="text-align:right">${b}</td></tr>`;
-  const opt = (label, v) => (v ? row(label, brl(v)) : '');
+  const disc = S.discounts.find(d => d.id === c.disc);
   $('#print-area').innerHTML = `
-    <img src="logo.png" alt="π3D" style="height:48px">
-    <h1 style="font-size:20px;margin:0">Orçamento de impressão 3D</h1>
-    <p>${esc(c.name || 'Peça sem nome')} · ${new Date().toLocaleDateString('pt-BR')}</p>
-    <h3>Previsão</h3>
-    <table>
-      ${row('Tempo de impressão', `${Math.floor(tot / 60)}h ${tot % 60}min`)}
-      ${row('Material total', `${r.grams.toLocaleString('pt-BR')} g`)}
-      ${row('Impressora', esc(r.printerName || '-'))}
-    </table>
-    <h3>Material por filamento</h3>
-    <table>${r.mats.map(x => row(`${esc(x.name)}: ${x.g.toLocaleString('pt-BR')} g`, brl(x.cost))).join('')}</table>
-    <h3>Valores</h3>
-    <table>
-      ${row('Material', brl(r.material))}
-      ${row('Energia', brl(r.energy))}
-      ${opt('Depreciação da máquina', r.machine)}
-      ${opt('Mão de obra', r.labor)}
-      ${opt('Outros custos', r.extra)}
-      ${opt('Manutenção', r.maint)}
-      ${opt('Acabamento', r.finish)}
-      ${opt('Margem de falhas', r.failure)}
-      ${row('<b>Custo total</b>', `<b>${brl(r.cost)}</b>`)}
-      ${opt('Lucro', r.profit)}
-      ${opt('Taxa / imposto', r.fee)}
-      ${r.discount ? row(`Desconto (${r.discPct}%)`, '-' + brl(r.discount)) : ''}
-      ${row('<b>Preço final</b>', `<b>${brl(r.price)}</b>`)}
-    </table>
-    <h3>Observações</h3>
-    <ul>
-      <li>O tempo de impressão pode variar conforme a máquina, a velocidade e o fatiamento.</li>
-      <li>O consumo de material pode variar por causa de suportes, purga e possíveis falhas.</li>
-      <li>Os valores podem mudar se o preço do filamento ou da energia mudar.</li>
-      <li>Confirme o prazo de entrega antes de fechar o pedido.</li>
-    </ul>`;
+    <div class="pdf">
+      <div class="pdf-head">
+        <img src="logo.png" alt="π3D">
+        <div><h1>Orçamento</h1><p>${esc(c.name || 'Peça sem nome')} · ${new Date().toLocaleDateString('pt-BR')}</p></div>
+      </div>
+      <div class="pdf-grid">
+        <div class="pdf-box"><small>TEMPO ESTIMADO</small><b>${Math.floor(tot / 60)}h ${tot % 60}min</b></div>
+        <div class="pdf-box"><small>MATERIAL ESTIMADO</small><b>${r.grams.toLocaleString('pt-BR')} g</b></div>
+      </div>
+      ${disc ? `<div class="pdf-disc"><small>DESCONTO · ${r.discPct}%</small>${esc(disc.name)}<br>Valor sem desconto: ${brl(r.gross)}</div>` : ''}
+      <div class="pdf-total"><small>VALOR FINAL</small><b>${brl(r.price)}</b></div>
+      <h3>Observações</h3>
+      <ul>
+        <li>O tempo de impressão pode variar conforme a máquina, a velocidade e o fatiamento.</li>
+        <li>O consumo de material pode variar por causa de suportes, purga e possíveis falhas.</li>
+        <li>O valor pode mudar se o preço do filamento ou da energia mudar.</li>
+        <li>Confirme o prazo de entrega antes de fechar o pedido.</li>
+      </ul>
+    </div>`;
   window.print();
 }
 $('#c-pdf').onclick = exportPdf;
