@@ -1,5 +1,5 @@
-const CACHE = 'preco3d-v1';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'preco3d-v2';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './logo.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
