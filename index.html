@@ -56,26 +56,24 @@ dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,420px);background
 dialog::backdrop{background:rgba(0,0,0,.5)}
 #print-area{display:none}
 @media print{
+  @page{size:A4 portrait;margin:10mm}
   body *{visibility:hidden}
   #print-area,#print-area *{visibility:visible}
-  #print-area{display:block;position:absolute;left:0;top:0;width:100%;padding:20px;color:#000;background:#fff;font-size:13px}
-  #print-area table{width:100%;border-collapse:collapse;margin-bottom:8px}
-  #print-area td{border-bottom:1px solid #ddd;padding:4px 0}
-  #print-area h3{margin:14px 0 4px;font-size:14px}
-  .pdf{font-family:system-ui,Segoe UI,Arial,sans-serif;color:#000}
-  .pdf-head{display:flex;align-items:center;gap:16px;border-bottom:4px solid #000;padding-bottom:14px}
-  .pdf-head img{height:72px}
-  .pdf-head h1{margin:0;font-size:26px;letter-spacing:.04em;text-transform:uppercase}
-  .pdf-head p{margin:4px 0 0;color:#555}
-  .pdf-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
-  .pdf-box{border:2px solid #000;border-radius:10px;padding:14px}
-  .pdf-box small,.pdf-disc small,.pdf-total small{display:block;color:#555;letter-spacing:.08em;font-size:11px}
-  .pdf-box b{font-size:22px}
-  .pdf-disc{border-left:4px solid #000;background:#f2f2f2;padding:10px 14px;margin:12px 0}
-  .pdf-total{background:#000;color:#fff;border-radius:10px;padding:18px;margin-top:12px}
-  .pdf-total small{color:#ccc}
-  .pdf-total b{font-size:34px}
-  .pdf ul{padding-left:18px;color:#333}
+  #print-area{display:block;position:absolute;left:0;top:0;width:100%;color:#000;background:#fff;font:12px/1.4 system-ui,Segoe UI,Arial,sans-serif}
+  .pdf-top{display:flex;align-items:center;gap:12px;background:#000;color:#fff;padding:10px 14px;border-radius:6px}
+  .pdf-top img{height:54px;background:#fff;border-radius:4px;padding:4px}
+  .pdf-top h1{margin:0;font-size:18px;flex:1;text-align:center}
+  .pdf h3{margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid #000;padding-bottom:3px}
+  .pdf table{width:100%;border-collapse:collapse}
+  .pdf th{background:#000;color:#fff;font-size:11px;padding:6px;text-align:left}
+  .pdf td{border-bottom:1px solid #ccc;padding:6px}
+  .pdf .r{text-align:right}
+  .pdf-info td:first-child{width:22%;color:#555}
+  .pdf-sum{margin-top:10px;width:55%;margin-left:auto}
+  .pdf-sum .final td{background:#000;color:#fff;font-weight:700;font-size:14px}
+  .pdf-photos{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pdf-photos img{width:100%;border:1px solid #ccc;border-radius:6px}
+  .pdf ul{padding-left:18px;margin:6px 0}
 }
 </style>
 </head>
@@ -127,6 +125,27 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <div class="card">
     <h2>Desconto</h2>
     <select id="c-disc"></select>
+  </div>
+  <div class="card">
+    <h2>Cliente e peça (opcional)</h2>
+    <label>Nome do cliente</label>
+    <input data-f="cname">
+    <div class="row">
+      <div><label>Telefone</label><input data-f="phone" inputmode="tel"></div>
+      <div><label>E-mail</label><input data-f="email" type="email"></div>
+    </div>
+    <label>Endereço</label>
+    <input data-f="addr">
+    <div class="row">
+      <div><label>Dimensões</label><input data-f="dims" placeholder="ex.: 161 x 162 x 89 mm"></div>
+      <div><label>Quantidade</label><input data-f="qty" type="number" inputmode="numeric" min="1" step="1"></div>
+    </div>
+    <label>Frete (R$)</label>
+    <input data-f="frete" type="number" inputmode="decimal" min="0" step="any">
+    <label>Fotos da peça (até 3)</label>
+    <input type="file" id="c-photos" accept="image/*" multiple>
+    <div class="hint" id="c-photohint"></div>
+    <button class="sec full" id="c-clearphotos">Remover fotos</button>
   </div>
   <div class="card" id="c-result"></div>
   <button class="full" id="c-save">💾 Salvar no histórico</button>
@@ -256,7 +275,7 @@ const DEFAULT = {
   discounts: [],
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
   settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, density: 1.24, infill: 15, margin: 100, fee: 0 },
-  calc: { name: '', disc: '', printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
+  calc: { name: '', disc: '', cname: '', phone: '', email: '', addr: '', dims: '', qty: 1, frete: '', photos: [], printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: []
 };
 let S;
@@ -313,7 +332,10 @@ function compute(c) {
   const discPct = disc ? Math.min(disc.pct, 100) : 0;
   const discount = gross * discPct / 100;
   const price = gross - discount;
-  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price,
+  const qty = Math.max(1, Math.floor(num(c.qty)) || 1);
+  const frete = num(c.frete);
+  const total = price * qty + frete;
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price, qty, frete, total,
     printerName: printer ? printer.name : '' };
 }
 
@@ -328,6 +350,8 @@ function renderCalc() {
   if (!S.discounts.find(d => d.id === c.disc)) c.disc = '';
   $('#c-disc').innerHTML = '<option value="">Sem desconto</option>' + S.discounts.map(d => `<option value="${d.id}">${esc(d.name)} (${d.pct}%)</option>`).join('');
   $('#c-disc').value = c.disc;
+  document.querySelectorAll('[data-f]').forEach(el => { el.value = c[el.dataset.f] || ''; });
+  $('#c-photohint').textContent = c.photos.length ? `${c.photos.length} foto(s) anexada(s)` : 'Nenhuma foto anexada';
   $('#c-name').value = c.name; $('#c-h').value = c.h; $('#c-m').value = c.m;
   $('#c-work').value = c.work; $('#c-extra').value = c.extra;
   // linhas de filamento
@@ -360,7 +384,8 @@ function renderResult() {
     ${L('Lucro', r.profit, ` <small>(${S.settings.margin}%)</small>`)}
     ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
     ${r.discount ? L('Desconto', -r.discount, ` <small>(${r.discPct}%)</small>`) : ''}
-    <div class="total"><span>Preço de venda</span><span class="big">${brl(r.price)}</span></div>`;
+    ${r.frete ? L('Frete', r.frete) : ''}
+    <div class="total"><span>Total${r.qty > 1 ? ` (${r.qty} peças)` : ''}</span><span class="big">${brl(r.total)}</span></div>`;
 }
 
 document.addEventListener('input', e => {
@@ -368,6 +393,7 @@ document.addEventListener('input', e => {
   if (t.id === 'c-name') c.name = t.value;
   else if (t.id === 'c-printer') c.printer = t.value;
   else if (t.id === 'c-disc') c.disc = t.value;
+  else if (t.dataset && t.dataset.f) c[t.dataset.f] = t.value;
   else if (t.id === 'c-h') c.h = t.value;
   else if (t.id === 'c-m') c.m = t.value;
   else if (t.id === 'c-work') c.work = t.value;
@@ -499,7 +525,7 @@ function renderHist() {
   $('#h-list').innerHTML = S.history.length ? S.history.map(h => `
     <div class="item">
       <div class="info"><b>${esc(h.name)}</b><small>${new Date(h.date).toLocaleDateString('pt-BR')} · ${h.r.grams} g · ${(h.r.hours).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h</small></div>
-      <div style="text-align:right"><b>${brl(h.r.price)}</b><small>custo ${brl(h.r.cost)}</small></div>
+      <div style="text-align:right"><b>${brl(h.r.total ?? h.r.price)}</b><small>custo ${brl(h.r.cost)}</small></div>
       <button class="sec" data-hedit="${h.id}">Editar</button>
       <button class="del" data-hdel="${h.id}">✕</button>
     </div>`).join('') : '<div class="empty">Nada salvo ainda.</div>';
@@ -628,29 +654,62 @@ $('#d-list').addEventListener('click', e => {
 });
 
 /* ---------- PDF do orçamento (usa a impressão do navegador: "Salvar como PDF") ---------- */
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 700 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = img.width * k; cv.height = img.height * k;
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      res(cv.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+$('#c-photos').onchange = async e => {
+  const c = S.calc;
+  for (const f of [...e.target.files].slice(0, 3 - c.photos.length)) {
+    try { c.photos.push(await shrink(f)); } catch { alert('Não consegui ler uma das fotos.'); }
+  }
+  e.target.value = ''; save(); renderCalc();
+};
+$('#c-clearphotos').onclick = () => { S.calc.photos = []; save(); renderCalc(); };
+
+/* ---------- PDF do orçamento (usa a impressão do navegador: "Salvar como PDF") ---------- */
 function exportPdf() {
   const r = compute(S.calc);
   if (!r.price) { alert('Preencha tempo e material antes de exportar.'); return; }
   const c = S.calc, tot = Math.round(r.hours * 60);
   const disc = S.discounts.find(d => d.id === c.disc);
+  const info = [['Cliente', c.cname], ['Telefone', c.phone], ['E-mail', c.email], ['Endereço', c.addr]]
+    .filter(([, v]) => v && v.trim());
+  const sub = r.gross * r.qty;
   $('#print-area').innerHTML = `
     <div class="pdf">
-      <div class="pdf-head">
-        <img src="logo.png" alt="π3D">
-        <div><h1>Orçamento</h1><p>${esc(c.name || 'Peça sem nome')} · ${new Date().toLocaleDateString('pt-BR')}</p></div>
+      <div class="pdf-top">
+        <img src="logo.png" alt="π3D"><h1>π3D - Impressão 3D</h1><span>${new Date().toLocaleDateString('pt-BR')}</span>
       </div>
-      <div class="pdf-grid">
-        <div class="pdf-box"><small>TEMPO ESTIMADO</small><b>${Math.floor(tot / 60)}h ${tot % 60}min</b></div>
-        <div class="pdf-box"><small>MATERIAL ESTIMADO</small><b>${r.grams.toLocaleString('pt-BR')} g</b></div>
-      </div>
-      ${disc ? `<div class="pdf-disc"><small>DESCONTO · ${r.discPct}%</small>${esc(disc.name)}<br>Valor sem desconto: ${brl(r.gross)}</div>` : ''}
-      <div class="pdf-total"><small>VALOR FINAL</small><b>${brl(r.price)}</b></div>
+      ${info.length ? `<h3>Cliente</h3><table class="pdf-info">${info.map(([k, v]) => `<tr><td>${k}:</td><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}
+      <h3>Peça</h3>
+      <table>
+        <tr><th>Peça</th><th>QNT</th><th>Material</th><th>Dimensões</th><th>Tempo</th><th class="r">Unitário</th><th class="r">Subtotal</th></tr>
+        <tr><td>${esc(c.name || 'Peça')}</td><td>${r.qty}</td><td>${esc(r.mats.map(x => x.name).join(', ') || '-')}</td><td>${esc(c.dims || '-')}</td><td>${Math.floor(tot / 60)}h ${tot % 60}min</td><td class="r">${brl(r.gross)}</td><td class="r">${brl(sub)}</td></tr>
+      </table>
+      <table class="pdf-sum">
+        <tr><td>Subtotal</td><td class="r">${brl(sub)}</td></tr>
+        ${disc ? `<tr><td>Desconto (${r.discPct}%): ${esc(disc.name)}</td><td class="r">-${brl(r.discount * r.qty)}</td></tr>` : ''}
+        <tr><td>Frete</td><td class="r">${r.frete ? brl(r.frete) : '-'}</td></tr>
+        <tr class="final"><td>Total final</td><td class="r">${brl(r.total)}</td></tr>
+      </table>
+      ${c.photos.length ? `<h3>Fotos</h3><div class="pdf-photos">${c.photos.map(p => `<img src="${p}">`).join('')}</div>` : ''}
       <h3>Observações</h3>
       <ul>
-        <li>O tempo de impressão pode variar conforme a máquina, a velocidade e o fatiamento.</li>
+        <li>O tempo de impressão é uma estimativa e pode aumentar por causa de falhas durante a impressão.</li>
         <li>O consumo de material pode variar por causa de suportes, purga e possíveis falhas.</li>
-        <li>O valor pode mudar se o preço do filamento ou da energia mudar.</li>
-        <li>Confirme o prazo de entrega antes de fechar o pedido.</li>
+        <li>O tamanho final da peça pode sofrer alterações caso ela dependa de montagem ao final da impressão.</li>
       </ul>
     </div>`;
   window.print();
