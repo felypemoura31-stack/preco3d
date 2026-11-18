@@ -57,9 +57,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #print-area{display:none}
 @media print{
   @page{size:A4 portrait;margin:10mm}
-  body *{visibility:hidden}
-  #print-area,#print-area *{visibility:visible}
-  #print-area{display:block;position:absolute;left:0;top:0;width:100%;color:#000;background:#fff;font:12px/1.4 system-ui,Segoe UI,Arial,sans-serif}
+  body > *:not(#print-area){display:none!important}
+  body{margin:0;padding:0;background:#fff}
+  #print-area{display:block;color:#000;background:#fff;font:12px/1.4 system-ui,Segoe UI,Arial,sans-serif}
   .pdf-top{display:flex;align-items:center;gap:12px;background:#000;color:#fff;padding:10px 14px;border-radius:6px}
   .pdf-top img{height:54px;background:#fff;border-radius:4px;padding:4px}
   .pdf-top h1{margin:0;font-size:18px;flex:1;text-align:center}
@@ -75,6 +75,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   .pdf-photos img{width:100%;max-height:80mm;object-fit:contain;border:1px solid #ccc;border-radius:6px}
   .pdf ul{padding-left:18px;margin:6px 0}
 }
+.pv{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pv div{position:relative}
+.pv img{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.pv button{position:absolute;top:4px;right:4px;padding:2px 8px;background:#fff;color:#000}
 </style>
 </head>
 <body>
@@ -142,9 +146,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     </div>
     <label>Frete (R$)</label>
     <input data-f="frete" type="number" inputmode="decimal" min="0" step="any">
-    <label>Fotos da peça (até 3)</label>
+    <label>Fotos da peça (até 3): escolha ou cole com Ctrl+V</label>
     <input type="file" id="c-photos" accept="image/*" multiple>
     <div class="hint" id="c-photohint"></div>
+    <div class="pv" id="c-previews"></div>
     <button class="sec full" id="c-clearphotos">Remover fotos</button>
   </div>
   <div class="card" id="c-result"></div>
@@ -352,6 +357,7 @@ function renderCalc() {
   $('#c-disc').value = c.disc;
   document.querySelectorAll('[data-f]').forEach(el => { el.value = c[el.dataset.f] || ''; });
   $('#c-photohint').textContent = c.photos.length ? `${c.photos.length} foto(s) anexada(s)` : 'Nenhuma foto anexada';
+  $('#c-previews').innerHTML = c.photos.map((p, i) => `<div><img src="${p}" alt="Foto ${i + 1}"><button data-pi="${i}">✕</button></div>`).join('');
   $('#c-name').value = c.name; $('#c-h').value = c.h; $('#c-m').value = c.m;
   $('#c-work').value = c.work; $('#c-extra').value = c.extra;
   // linhas de filamento
@@ -685,6 +691,23 @@ $('#c-photos').onchange = async e => {
   e.target.value = ''; save(); renderCalc();
 };
 $('#c-clearphotos').onclick = () => { S.calc.photos = []; save(); renderCalc(); };
+$('#c-previews').addEventListener('click', e => {
+  const i = e.target.dataset.pi; if (i === undefined) return;
+  S.calc.photos.splice(+i, 1); save(); renderCalc();
+});
+// Ctrl+V na aba Calcular: cola a imagem da área de transferência
+document.addEventListener('paste', async e => {
+  if (!$('#calc').classList.contains('on')) return;
+  const items = [...((e.clipboardData && e.clipboardData.items) || [])].filter(i => i.type.startsWith('image/'));
+  if (!items.length) return;
+  e.preventDefault();
+  const c = S.calc;
+  if (c.photos.length >= 3) { alert('O orçamento já tem 3 fotos. Remova alguma para colar outra.'); return; }
+  for (const it of items.slice(0, 3 - c.photos.length)) {
+    try { c.photos.push(await shrink(it.getAsFile())); } catch { alert('Não consegui ler a foto colada.'); }
+  }
+  save(); renderCalc();
+});
 
 /* ---------- PDF do orçamento (usa a impressão do navegador: "Salvar como PDF") ---------- */
 async function exportPdf() {
