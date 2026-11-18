@@ -572,7 +572,7 @@ async function readThreeMF(file) {
     return el ? num(el.getAttribute('value')) : 0;
   };
   const filaments = [...plate.querySelectorAll('filament')].map(f => ({ type: f.getAttribute('type') || '', g: num(f.getAttribute('used_g')) }));
-  const img = zip.file('Metadata/plate_1.png');
+  const img = zip.file(/^Metadata\/plate_\d+\.png$/)[0];
   const photo = img ? 'data:image/png;base64,' + await img.async('base64') : '';
   return { seconds: meta('prediction'), grams: meta('weight') || filaments.reduce((a, f) => a + f.g, 0), filaments, photo };
 }
@@ -635,7 +635,7 @@ $('#c-file').onchange = async e => {
       alert(`Estimativa pelo STL: ~${info.grams.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} g (volume ${info.cm3.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} cm³). O tempo não sai do STL: preencha manualmente.`);
     } else {
       const t = info.seconds ? `${Math.floor(info.seconds / 3600)}h ${Math.round(info.seconds % 3600 / 60)}min` : 'sem tempo (preencha)';
-      alert(`Importado: ${t}, ${info.grams.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g.`);
+      alert(`Importado: ${t}, ${info.grams.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g.${info.photo ? '' : ' Sem foto: o arquivo não tem miniatura.'}`);
     }
   } catch (err) {
     alert(err.message || 'Não foi possível ler este arquivo.');
