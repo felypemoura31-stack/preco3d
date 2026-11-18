@@ -572,7 +572,9 @@ async function readThreeMF(file) {
     return el ? num(el.getAttribute('value')) : 0;
   };
   const filaments = [...plate.querySelectorAll('filament')].map(f => ({ type: f.getAttribute('type') || '', g: num(f.getAttribute('used_g')) }));
-  const img = zip.file(/^Metadata\/plate_\d+\.png$/)[0];
+  // a miniatura tem que ser da mesma placa do G-code (um .3mf pode ter várias)
+  const gcode = zip.file(/^Metadata\/plate_\d+\.gcode$/)[0];
+  const img = gcode && zip.file(gcode.name.replace(/\.gcode$/, '.png'));
   const photo = img ? 'data:image/png;base64,' + await img.async('base64') : '';
   return { seconds: meta('prediction'), grams: meta('weight') || filaments.reduce((a, f) => a + f.g, 0), filaments, photo };
 }
