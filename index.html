@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <title>Preço 3D</title>
 <style>
@@ -75,6 +76,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   .pdf-photos img{width:100%;border:1px solid #ccc;border-radius:6px}
   .pdf ul{padding-left:18px;margin:6px 0}
 }
+#viewer{width:100vw;max-width:100vw;height:100vh;max-height:100vh;margin:0;padding:0;border-radius:0}
+#v-host{width:100%;height:calc(100vh - 150px);background:#fff}
 </style>
 </head>
 <body>
@@ -90,6 +93,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <div class="card">
     <h2>Importar arquivo</h2>
     <button class="sec full" id="c-import">📂 Escolher .3mf, .gcode ou .stl</button>
+    <button class="sec full" id="c-view">👁️ Ver 3D e escolher ângulo</button>
     <input type="file" id="c-file" accept=".3mf,.gcode,.stl" hidden>
     <div class="hint">.3mf ou .gcode fatiados trazem tempo e gramas exatos. .stl dá só uma estimativa de peso, sem tempo.</div>
   </div>
@@ -260,6 +264,20 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <button data-tab="cfg"><span class="ic">⚙️</span>Config</button>
 </nav>
 
+<dialog id="viewer">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px">
+    <b id="v-title">Visualizar G-code</b>
+    <button class="sec" id="v-close">Fechar</button>
+  </div>
+  <div id="v-host"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px">
+    <button class="sec" data-view="front">Frente</button>
+    <button class="sec" data-view="top">Topo</button>
+    <button class="sec" data-view="side">Lado</button>
+    <button class="sec" data-view="iso">Isométrica</button>
+    <button id="v-capture">📷 Capturar foto</button>
+  </div>
+</dialog>
 <dialog id="dlg"><div id="dlg-body"></div><button class="full" onclick="this.closest('dialog').close()">Fechar</button></dialog>
 
 <script>
@@ -602,12 +620,20 @@ function readStl(buf) {
   return { cm3: Math.abs(vol) / 1000 };
 }
 
+let lastFile = null;
+$('#c-view').onclick = () => (lastFile ? window.openViewer(lastFile) : alert('Importe primeiro um .3mf ou .gcode fatiado.'));
+window.addEventListener('capture', e => {
+  const c = S.calc;
+  if (c.photos.length >= 3) { alert('O orçamento já tem 3 fotos. Remova alguma para adicionar outra.'); return; }
+  c.photos.push(e.detail); save(); renderCalc();
+});
 $('#c-import').onclick = () => $('#c-file').click();
 $('#c-file').onchange = async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
   const name = f.name.toLowerCase();
+  if (!name.endsWith('.stl')) lastFile = f;
   try {
     let info;
     if (name.endsWith('.3mf')) info = await readThreeMF(f);
@@ -729,5 +755,128 @@ load(); renderCalc(); renderFils(); renderCfg(); renderDisc();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 <div id="print-area"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const dlg = document.querySelector('#viewer');
+const host = document.querySelector('#v-host');
+const title = document.querySelector('#v-title');
+let renderer, scene, camera, controls, lines, dist;
+
+function init() {
+  if (renderer) return;
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  host.appendChild(renderer.domElement);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xffffff);
+  camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100000);
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  new ResizeObserver(() => {
+    const w = host.clientWidth, h = host.clientHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }).observe(host);
+  (function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+}
+
+// Lê G/M, posição (G90/G91) e extrusão (M82/M83); guarda só os trajetos com filamento
+function parseGcode(text) {
+  const seg = [];
+  let x = 0, y = 0, z = 0, e = 0, absXYZ = true, absE = true;
+  for (const raw of text.split('\n')) {
+    const line = raw.split(';')[0].trim();
+    const cmd = line.match(/^([GM])\s*(\d+)/i);
+    if (!cmd) continue;
+    const w = {};
+    for (const m of line.matchAll(/([XYZE])(-?\d*\.?\d+)/gi)) w[m[1].toUpperCase()] = parseFloat(m[2]);
+    const code = cmd[1].toUpperCase() + cmd[2];
+    if (code === 'G90') absXYZ = true;
+    else if (code === 'G91') absXYZ = false;
+    else if (code === 'M82') absE = true;
+    else if (code === 'M83') absE = false;
+    else if (code === 'G92') {
+      if ('E' in w) e = w.E;
+      if ('X' in w) x = w.X;
+      if ('Y' in w) y = w.Y;
+      if ('Z' in w) z = w.Z;
+    } else if (code === 'G0' || code === 'G1') {
+      const nx = 'X' in w ? (absXYZ ? w.X : x + w.X) : x;
+      const ny = 'Y' in w ? (absXYZ ? w.Y : y + w.Y) : y;
+      const nz = 'Z' in w ? (absXYZ ? w.Z : z + w.Z) : z;
+      const de = 'E' in w ? (absE ? w.E - e : w.E) : 0;
+      if (de > 0 && (nx !== x || ny !== y || nz !== z)) seg.push(x, y, z, nx, ny, nz);
+      e += de; x = nx; y = ny; z = nz;
+    }
+  }
+  return new Float32Array(seg);
+}
+
+// Eixo Z do impressor vira Y do three.js, e o modelo fica centrado na origem
+function build(pos) {
+  let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < pos.length; i += 3)
+    for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], pos[i + k]); mx[k] = Math.max(mx[k], pos[i + k]); }
+  const c = mn.map((v, k) => (v + mx[k]) / 2);
+  const out = new Float32Array(pos.length);
+  for (let i = 0; i < pos.length; i += 3) {
+    out[i] = pos[i] - c[0];
+    out[i + 1] = pos[i + 2] - c[2];
+    out[i + 2] = -(pos[i + 1] - c[1]);
+  }
+  if (lines) { scene.remove(lines); lines.geometry.dispose(); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(out, 3));
+  lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x222222 }));
+  scene.add(lines);
+  dist = Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) * 1.6 + 10;
+  camera.far = dist * 20;
+  camera.updateProjectionMatrix();
+}
+
+const VIEWS = { front: [0, 0.35, 1], top: [0, 1, 0.001], side: [1, 0.35, 0], iso: [1, 0.8, 1] };
+function setView(name) {
+  const v = new THREE.Vector3(...VIEWS[name]).normalize().multiplyScalar(dist);
+  camera.up.set(0, 1, 0);
+  camera.position.copy(v);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+window.openViewer = async file => {
+  init();
+  title.textContent = 'Carregando…';
+  dlg.showModal();
+  try {
+    let text;
+    if (file.name.toLowerCase().endsWith('.3mf')) {
+      const zip = await JSZip.loadAsync(file);
+      const g = zip.file(/^Metadata\/plate_\d+\.gcode$/)[0];
+      if (!g) throw new Error('Este 3MF não tem G-code. Exporte o arquivo fatiado.');
+      text = await g.async('string');
+    } else {
+      text = await file.text();
+    }
+    const pos = parseGcode(text);
+    if (!pos.length) throw new Error('Não encontrei trajetos de impressão nesse G-code.');
+    build(pos);
+    title.textContent = 'Visualizar G-code';
+    setView('iso');
+  } catch (err) {
+    title.textContent = err.message;
+  }
+};
+
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+document.querySelector('#v-capture').onclick = () => {
+  if (!renderer || !lines) return;
+  renderer.render(scene, camera);
+  window.dispatchEvent(new CustomEvent('capture', { detail: renderer.domElement.toDataURL('image/jpeg', 0.85) }));
+};
+document.querySelector('#v-close').onclick = () => dlg.close();
+</script>
 </body>
 </html>
