@@ -551,10 +551,13 @@ function readGcode(text) {
   const grams = text.match(/total filament weight \[g\]\s*:\s*([\d.]+)/i) || text.match(/filament used \[g\]\s*=\s*([\d.,\s]+)/i);
   if (!time && !grams) throw new Error('Este G-code não tem tempo nem peso. Exporte pelo fatiador.');
   const gs = grams ? grams[1].split(',').map(num) : [];
+  const th = text.match(/; thumbnail(_jpg)? begin \d+x\d+ \d+\r?\n([\s\S]*?); thumbnail(?:_jpg)? end/);
+  const photo = th ? `data:image/${th[1] ? 'jpeg' : 'png'};base64,` + th[2].replace(/^;\s?/gm, '').replace(/\s+/g, '') : '';
   return {
     seconds: time ? parseTime(time[1]) : 0,
     grams: gs.reduce((a, b) => a + b, 0),
-    filaments: gs.map(g => ({ g }))
+    filaments: gs.map(g => ({ g })),
+    photo
   };
 }
 
@@ -569,7 +572,9 @@ async function readThreeMF(file) {
     return el ? num(el.getAttribute('value')) : 0;
   };
   const filaments = [...plate.querySelectorAll('filament')].map(f => ({ type: f.getAttribute('type') || '', g: num(f.getAttribute('used_g')) }));
-  return { seconds: meta('prediction'), grams: meta('weight') || filaments.reduce((a, f) => a + f.g, 0), filaments };
+  const img = zip.file('Metadata/plate_1.png');
+  const photo = img ? 'data:image/png;base64,' + await img.async('base64') : '';
+  return { seconds: meta('prediction'), grams: meta('weight') || filaments.reduce((a, f) => a + f.g, 0), filaments, photo };
 }
 
 function readStl(buf) {
@@ -622,6 +627,7 @@ $('#c-file').onchange = async e => {
       fil: (c.lines[i] && c.lines[i].fil) || '',
       g: String(Math.round(x.g * 10) / 10)
     }));
+    if (info.photo) c.photos = [info.photo];
     if (!c.name) c.name = f.name.replace(/(\.gcode)?\.(3mf|gcode|stl)$/i, '');
     save(); renderCalc();
 
