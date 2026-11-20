@@ -130,6 +130,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <div class="card">
     <h2>Desconto</h2>
     <select id="c-disc"></select>
+    <label>Preço final desejado (R$, opcional)</label>
+    <input data-f="target" type="number" inputmode="decimal" min="0" step="any">
+    <div class="hint">Fixa o total. A diferença não aparece no PDF.</div>
   </div>
   <div class="card">
     <h2>Cliente e peça (opcional)</h2>
@@ -334,14 +337,19 @@ function compute(c) {
   const feePct = Math.min(st.fee, 95) / 100;
   const gross = subtotal / (1 - feePct);
   const fee = gross - subtotal;
-  const disc = S.discounts.find(d => d.id === c.disc);
+  const qty = Math.max(1, Math.floor(num(c.qty)) || 1);
+  const frete = num(c.frete);
+  const target = num(c.target);
+  // com preço desejado, o desconto não entra e a diferença vira ajuste (só na calculadora)
+  const disc = target ? null : S.discounts.find(d => d.id === c.disc);
   const discPct = disc ? Math.min(disc.pct, 100) : 0;
   const discount = gross * discPct / 100;
   const price = gross - discount;
-  const qty = Math.max(1, Math.floor(num(c.qty)) || 1);
-  const frete = num(c.frete);
-  const total = price * qty + frete;
-  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price, qty, frete, total,
+  const rawTotal = price * qty + frete;
+  const total = target || rawTotal;
+  const unit = target ? (target - frete) / qty : price;
+  const adj = total - rawTotal;
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price, unit, qty, frete, total, adj, target,
     printerName: printer ? printer.name : '' };
 }
 
@@ -392,6 +400,8 @@ function renderResult() {
     ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
     ${r.discount ? L('Desconto', -r.discount, ` <small>(${r.discPct}%)</small>`) : ''}
     ${r.frete ? L('Frete', r.frete) : ''}
+    ${r.target ? L('Ajuste de preço (só você vê)', r.adj) : ''}
+    ${r.target && r.total < r.cost * r.qty ? '<div class="hint">⚠️ O preço desejado está abaixo do custo.</div>' : ''}
     <div class="total"><span>Total${r.qty > 1 ? ` (${r.qty} peças)` : ''}</span><span class="big">${brl(r.total)}</span></div>`;
 }
 
@@ -715,10 +725,11 @@ async function exportPdf() {
   const r = compute(S.calc);
   if (!r.price) { alert('Preencha tempo e material antes de exportar.'); return; }
   const c = S.calc, tot = Math.round(r.hours * 60);
-  const disc = S.discounts.find(d => d.id === c.disc);
+  const disc = r.target ? null : S.discounts.find(d => d.id === c.disc);
   const info = [['Cliente', c.cname], ['Telefone', c.phone], ['E-mail', c.email], ['Endereço', c.addr]]
     .filter(([, v]) => v && v.trim());
-  const sub = r.gross * r.qty;
+  const unit = r.target ? r.unit : r.gross;
+  const sub = unit * r.qty;
   $('#print-area').innerHTML = `
     <div class="pdf">
       <div class="pdf-top">
@@ -728,7 +739,7 @@ async function exportPdf() {
       <h3>Peça</h3>
       <table>
         <tr><th>Peça</th><th>QNT</th><th>Material</th><th>Dimensões</th><th>Tempo</th><th class="r">Unitário</th><th class="r">Subtotal</th></tr>
-        <tr><td>${esc(c.name || 'Peça')}</td><td>${r.qty}</td><td>${esc(r.mats.map(x => x.name).join(', ') || '-')}</td><td>${esc(c.dims || '-')}</td><td>${Math.floor(tot / 60)}h ${tot % 60}min</td><td class="r">${brl(r.gross)}</td><td class="r">${brl(sub)}</td></tr>
+        <tr><td>${esc(c.name || 'Peça')}</td><td>${r.qty}</td><td>${esc(r.mats.map(x => x.name).join(', ') || '-')}</td><td>${esc(c.dims || '-')}</td><td>${Math.floor(tot / 60)}h ${tot % 60}min</td><td class="r">${brl(unit)}</td><td class="r">${brl(sub)}</td></tr>
       </table>
       <table class="pdf-sum">
         <tr><td>Subtotal</td><td class="r">${brl(sub)}</td></tr>
