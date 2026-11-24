@@ -80,6 +80,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 .pv div{position:relative}
 .pv img{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
 .pv button{position:absolute;top:4px;right:4px;padding:2px 8px;background:#fff;color:#000}
+#p-queue .item{flex-wrap:wrap}
+.flags{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%;margin-top:8px}
+.flags button{padding:8px 10px}
 </style>
 </head>
 <body>
@@ -185,6 +188,23 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <div class="card"><h2>Meus filamentos</h2><div id="f-list"></div></div>
 </section>
 
+<!-- PRODUÇÃO -->
+<section id="prod">
+  <div class="card"><h2>Fila de produção</h2><div id="p-queue"></div></div>
+  <div class="card">
+    <h2>Caixa</h2>
+    <div id="x-sum"></div>
+    <div class="row" style="margin-top:12px">
+      <div><label>Tipo</label><select id="x-kind"><option value="out">Gasto</option><option value="in">Entrada</option></select></div>
+      <div><label>Valor (R$)</label><input id="x-val" type="number" inputmode="decimal" min="0" step="any"></div>
+    </div>
+    <label>Descrição</label>
+    <input id="x-desc" placeholder="Ex.: Rolo PLA preto">
+    <button class="full" id="x-add">+ Lançar</button>
+    <div id="x-list"></div>
+  </div>
+</section>
+
 <!-- DESCONTOS -->
 <section id="disc">
   <div class="card">
@@ -265,6 +285,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <button data-tab="calc" class="on"><span class="ic">🧮</span>Calcular</button>
   <button data-tab="fils"><span class="ic">🧵</span>Filamentos</button>
   <button data-tab="hist"><span class="ic">🗂️</span>Histórico</button>
+  <button data-tab="prod"><span class="ic">🏭</span>Produção</button>
   <button data-tab="disc"><span class="ic">🏷️</span>Descontos</button>
   <button data-tab="cfg"><span class="ic">⚙️</span>Config</button>
 </nav>
@@ -285,7 +306,9 @@ const DEFAULT = {
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
   settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, density: 1.24, infill: 15, margin: 100, fee: 0 },
   calc: { name: '', disc: '', cname: '', phone: '', email: '', addr: '', dims: '', qty: 1, frete: '', photos: [], printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
-  history: []
+  history: [],
+  orders: [],
+  cash: []
 };
 let S;
 function load() {
@@ -305,6 +328,7 @@ function go(t) {
   if (t === 'calc') renderCalc();
   if (t === 'hist') renderHist();
   if (t === 'disc') renderDisc();
+  if (t === 'prod') renderProd();
   scrollTo(0, 0);
 }
 
@@ -543,6 +567,7 @@ function renderHist() {
     <div class="item">
       <div class="info"><b>${esc(h.name)}</b><small>${new Date(h.date).toLocaleDateString('pt-BR')} · ${h.r.grams} g · ${(h.r.hours).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h</small></div>
       <div style="text-align:right"><b>${brl(h.r.total ?? h.r.price)}</b><small>custo ${brl(h.r.cost)}</small></div>
+      <button class="sec" data-happ="${h.id}" ${S.orders.some(o => o.budgetId === h.id) ? 'disabled' : ''}>${S.orders.some(o => o.budgetId === h.id) ? 'Aprovado' : 'Aprovar'}</button>
       <button class="sec" data-hedit="${h.id}">Editar</button>
       <button class="del" data-hdel="${h.id}">✕</button>
     </div>`).join('') : '<div class="empty">Nada salvo ainda.</div>';
@@ -550,6 +575,7 @@ function renderHist() {
 $('#h-list').addEventListener('click', e => {
   const ed = e.target.dataset.hedit, del = e.target.dataset.hdel;
   if (ed) startEdit(ed);
+  if (e.target.dataset.happ) approve(e.target.dataset.happ);
   if (del) { S.history = S.history.filter(h => h.id !== del); save(); renderHist(); }
 });
 $('#h-clear').onclick = () => { if (S.history.length && confirm('Apagar todo o histórico?')) { S.history = []; save(); renderHist(); } };
@@ -761,8 +787,68 @@ async function exportPdf() {
 }
 $('#c-pdf').onclick = exportPdf;
 
+/* ---------- Produção e caixa ---------- */
+function approve(id) {
+  const h = S.history.find(x => x.id === id);
+  if (!h || S.orders.some(o => o.budgetId === id)) return;
+  S.orders.push({
+    id: uid(), budgetId: id, name: h.name, client: (h.calc && h.calc.cname) || '',
+    total: h.r.total ?? h.r.price, cost: h.r.cost * (h.r.qty || 1), approved: new Date().toISOString(),
+    pronto: false, entregue: false, pago: false
+  });
+  save(); renderHist(); alert('Aprovado! Foi para a fila de produção.');
+}
+
+function renderProd() {
+  const fila = S.orders.slice().sort((a, b) => a.approved.localeCompare(b.approved));
+  const flag = (o, k, label) => `<button class="${o[k] ? '' : 'sec'}" data-ok="${o.id}" data-k="${k}">${o[k] ? '✓ ' : ''}${label}</button>`;
+  $('#p-queue').innerHTML = fila.length ? fila.map((o, i) => `
+    <div class="item">
+      <div class="info"><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · ${brl(o.total)}</small></div>
+      <div class="flags">${flag(o, 'pronto', 'Pronto')}${flag(o, 'entregue', 'Entregue')}${flag(o, 'pago', 'Pago')}<button class="del" data-odel="${o.id}">Cancelar</button></div>
+    </div>`).join('') : '<div class="empty">Nenhum pedido aprovado. Aprove um orçamento no Histórico.</div>';
+  renderCaixa();
+}
+$('#p-queue').addEventListener('click', e => {
+  const { ok, k, odel } = e.target.dataset;
+  if (ok) { const o = S.orders.find(x => x.id === ok); o[k] = !o[k]; save(); renderProd(); }
+  if (odel && confirm('Cancelar este pedido? O orçamento continua no histórico.')) {
+    S.orders = S.orders.filter(x => x.id !== odel); save(); renderProd(); renderHist();
+  }
+});
+
+function renderCaixa() {
+  const soma = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+  const recebido = soma(S.orders.filter(o => o.pago), o => o.total) + soma(S.cash.filter(x => x.kind === 'in'), x => x.value);
+  const aReceber = soma(S.orders.filter(o => !o.pago), o => o.total);
+  const gastos = soma(S.cash.filter(x => x.kind === 'out'), x => x.value);
+  const custo = soma(S.orders, o => o.cost);
+  $('#x-sum').innerHTML = `
+    <div class="line"><span>Recebido</span><span>${brl(recebido)}</span></div>
+    <div class="line"><span>A receber (pedidos não pagos)</span><span>${brl(aReceber)}</span></div>
+    <div class="line"><span>Gastos lançados</span><span>${brl(gastos)}</span></div>
+    <div class="total"><span>Saldo (recebido − gastos)</span><span class="big">${brl(recebido - gastos)}</span></div>
+    <div class="hint">Custo estimado de material e energia dos pedidos: ${brl(custo)}. É só informativo.</div>`;
+  $('#x-list').innerHTML = S.cash.slice().reverse().map(x => `
+    <div class="item">
+      <div class="info"><b>${esc(x.desc)}</b><small>${x.kind === 'in' ? 'Entrada' : 'Gasto'} · ${new Date(x.date).toLocaleDateString('pt-BR')}</small></div>
+      <b>${x.kind === 'in' ? '+' : '−'} ${brl(x.value)}</b>
+      <button class="del" data-xdel="${x.id}">✕</button>
+    </div>`).join('');
+}
+$('#x-add').onclick = () => {
+  const desc = $('#x-desc').value.trim(), value = num($('#x-val').value);
+  if (!desc || value <= 0) { alert('Informe a descrição e um valor maior que zero.'); return; }
+  S.cash.push({ id: uid(), kind: $('#x-kind').value, desc, value, date: new Date().toISOString() });
+  $('#x-desc').value = ''; $('#x-val').value = ''; save(); renderCaixa();
+};
+$('#x-list').addEventListener('click', e => {
+  const id = e.target.dataset.xdel; if (!id) return;
+  S.cash = S.cash.filter(x => x.id !== id); save(); renderCaixa();
+});
+
 /* ---------- Init ---------- */
-load(); renderCalc(); renderFils(); renderCfg(); renderDisc();
+load(); renderCalc(); renderFils(); renderCfg(); renderDisc(); renderProd();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 <div id="print-area"></div>
