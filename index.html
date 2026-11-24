@@ -47,7 +47,7 @@ button.full{width:100%;margin-top:12px}
 .fil{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
 .fil .grow{flex:2}.fil .g{flex:1}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;background:none;color:var(--muted);border-radius:0;padding:12px 4px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button{flex:1;background:none;color:var(--muted);border-radius:0;padding:12px 4px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
 nav button .ic{font-size:20px}
 nav button.on{color:var(--primary)}
 .empty{color:var(--muted);text-align:center;padding:18px 0}
@@ -83,6 +83,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 #p-queue .item{flex-wrap:wrap}
 .flags{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%;margin-top:8px}
 .flags button{padding:8px 10px}
+.oval{width:110px;flex:none}
 </style>
 </head>
 <body>
@@ -191,10 +192,16 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 <!-- PRODUÇÃO -->
 <section id="prod">
   <div class="card"><h2>Fila de produção</h2><div id="p-queue"></div></div>
+  <div class="hint">Quando um pedido estiver Pronto e Pago, ele vai para a aba Caixa.</div>
+</section>
+
+<!-- CAIXA -->
+<section id="cx">
+  <div class="card"><h2>Resumo</h2><div id="x-sum"></div></div>
+  <div class="card"><h2>Pedidos concluídos</h2><div id="x-orders"></div></div>
   <div class="card">
-    <h2>Caixa</h2>
-    <div id="x-sum"></div>
-    <div class="row" style="margin-top:12px">
+    <h2>Lançamentos</h2>
+    <div class="row">
       <div><label>Tipo</label><select id="x-kind"><option value="out">Gasto</option><option value="in">Entrada</option></select></div>
       <div><label>Valor (R$)</label><input id="x-val" type="number" inputmode="decimal" min="0" step="any"></div>
     </div>
@@ -286,6 +293,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   <button data-tab="fils"><span class="ic">🧵</span>Filamentos</button>
   <button data-tab="hist"><span class="ic">🗂️</span>Histórico</button>
   <button data-tab="prod"><span class="ic">🏭</span>Produção</button>
+  <button data-tab="cx"><span class="ic">💰</span>Caixa</button>
   <button data-tab="disc"><span class="ic">🏷️</span>Descontos</button>
   <button data-tab="cfg"><span class="ic">⚙️</span>Config</button>
 </nav>
@@ -329,6 +337,7 @@ function go(t) {
   if (t === 'hist') renderHist();
   if (t === 'disc') renderDisc();
   if (t === 'prod') renderProd();
+  if (t === 'cx') renderCaixa();
   scrollTo(0, 0);
 }
 
@@ -788,25 +797,31 @@ async function exportPdf() {
 $('#c-pdf').onclick = exportPdf;
 
 /* ---------- Produção e caixa ---------- */
+const vl = o => o.valor ?? o.total;   // valor a receber (pode ter desconto final)
+const concluido = o => o.pronto && o.pago;   // pronto e pago: sai da produção e vai para o caixa
+
 function approve(id) {
   const h = S.history.find(x => x.id === id);
   if (!h || S.orders.some(o => o.budgetId === id)) return;
+  const total = h.r.total ?? h.r.price;
   S.orders.push({
     id: uid(), budgetId: id, name: h.name, client: (h.calc && h.calc.cname) || '',
-    total: h.r.total ?? h.r.price, cost: h.r.cost * (h.r.qty || 1), approved: new Date().toISOString(),
+    total, valor: total, cost: h.r.cost * (h.r.qty || 1), approved: new Date().toISOString(),
     pronto: false, entregue: false, pago: false
   });
   save(); renderHist(); alert('Aprovado! Foi para a fila de produção.');
 }
 
 function renderProd() {
-  const fila = S.orders.slice().sort((a, b) => a.approved.localeCompare(b.approved));
+  const fila = S.orders.filter(o => !concluido(o)).sort((a, b) => a.approved.localeCompare(b.approved));
   const flag = (o, k, label) => `<button class="${o[k] ? '' : 'sec'}" data-ok="${o.id}" data-k="${k}">${o[k] ? '✓ ' : ''}${label}</button>`;
   $('#p-queue').innerHTML = fila.length ? fila.map((o, i) => `
     <div class="item">
-      <div class="info"><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · ${brl(o.total)}</small></div>
-      <div class="flags">${flag(o, 'pronto', 'Pronto')}${flag(o, 'entregue', 'Entregue')}${flag(o, 'pago', 'Pago')}<button class="del" data-odel="${o.id}">Cancelar</button></div>
-    </div>`).join('') : '<div class="empty">Nenhum pedido aprovado. Aprove um orçamento no Histórico.</div>';
+      <div class="info"><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}</small></div>
+      <div class="flags">${flag(o, 'pronto', 'Pronto')}${flag(o, 'entregue', 'Entregue')}${flag(o, 'pago', 'Pago')}
+        <input class="oval" data-oval="${o.id}" type="number" inputmode="decimal" min="0" step="any" value="${vl(o)}" title="Valor a receber">
+        <button class="del" data-odel="${o.id}">Cancelar</button></div>
+    </div>`).join('') : '<div class="empty">Nenhum pedido na produção.</div>';
   renderCaixa();
 }
 $('#p-queue').addEventListener('click', e => {
@@ -816,19 +831,34 @@ $('#p-queue').addEventListener('click', e => {
     S.orders = S.orders.filter(x => x.id !== odel); save(); renderProd(); renderHist();
   }
 });
+// valor a receber: editável na produção e no caixa (ex.: desconto final)
+document.addEventListener('change', e => {
+  const id = e.target.dataset.oval; if (!id) return;
+  S.orders.find(x => x.id === id).valor = num(e.target.value);
+  save(); renderProd();
+});
 
 function renderCaixa() {
   const soma = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
-  const recebido = soma(S.orders.filter(o => o.pago), o => o.total) + soma(S.cash.filter(x => x.kind === 'in'), x => x.value);
+  const pagos = S.orders.filter(o => o.pago);
+  const recebido = soma(pagos, vl) + soma(S.cash.filter(x => x.kind === 'in'), x => x.value);
+  const descontos = soma(pagos, o => o.total - vl(o));
   const aReceber = soma(S.orders.filter(o => !o.pago), o => o.total);
   const gastos = soma(S.cash.filter(x => x.kind === 'out'), x => x.value);
   const custo = soma(S.orders, o => o.cost);
   $('#x-sum').innerHTML = `
     <div class="line"><span>Recebido</span><span>${brl(recebido)}</span></div>
+    <div class="line"><span>Descontos finais dados</span><span>${brl(descontos)}</span></div>
     <div class="line"><span>A receber (pedidos não pagos)</span><span>${brl(aReceber)}</span></div>
     <div class="line"><span>Gastos lançados</span><span>${brl(gastos)}</span></div>
     <div class="total"><span>Saldo (recebido − gastos)</span><span class="big">${brl(recebido - gastos)}</span></div>
     <div class="hint">Custo estimado de material e energia dos pedidos: ${brl(custo)}. É só informativo.</div>`;
+  const feitos = S.orders.filter(concluido);
+  $('#x-orders').innerHTML = feitos.length ? feitos.map(o => `
+    <div class="item">
+      <div class="info"><b>${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}${vl(o) < o.total ? ' · desconto final' : ''}</small></div>
+      <input class="oval" data-oval="${o.id}" type="number" inputmode="decimal" min="0" step="any" value="${vl(o)}" title="Valor recebido">
+    </div>`).join('') : '<div class="empty">Nenhum pedido concluído ainda.</div>';
   $('#x-list').innerHTML = S.cash.slice().reverse().map(x => `
     <div class="item">
       <div class="info"><b>${esc(x.desc)}</b><small>${x.kind === 'in' ? 'Entrada' : 'Gasto'} · ${new Date(x.date).toLocaleDateString('pt-BR')}</small></div>
