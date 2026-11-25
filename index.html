@@ -132,8 +132,9 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   </div>
 
   <div class="card">
-    <h2>Desconto</h2>
+    <h2>Descontos</h2>
     <select id="c-disc"></select>
+    <div id="c-discs"></div>
     <label>Preço final desejado (R$, opcional)</label>
     <input data-f="target" type="number" inputmode="decimal" min="0" step="any">
     <div class="hint">Fixa o total. A diferença não aparece no PDF.</div>
@@ -198,7 +199,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 <!-- CAIXA -->
 <section id="cx">
   <div class="card"><h2>Resumo</h2><div id="x-sum"></div></div>
-  <div class="card"><h2>Pedidos concluídos</h2><div id="x-orders"></div></div>
+  <div class="card"><h2>Histórico de recebimentos</h2><div id="x-orders"></div></div>
   <div class="card">
     <h2>Lançamentos</h2>
     <div class="row">
@@ -307,13 +308,14 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const brl = n => (isFinite(n) ? n : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dIds = c => c.discs || (c.disc ? [c.disc] : []);   // descontos do orçamento (aceita o formato antigo de um só)
 
 const DEFAULT = {
   filaments: [],
   discounts: [],
   printers: [{ id: uid(), name: 'Bambu Lab A1', watts: 120 }],
   settings: { kwh: 1.17, machine: 3.47, labor: 0, fail: 5, maint: 15, finish: 10, density: 1.24, infill: 15, margin: 100, fee: 0 },
-  calc: { name: '', disc: '', cname: '', phone: '', email: '', addr: '', dims: '', qty: 1, frete: '', photos: [], printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
+  calc: { name: '', discs: [], cname: '', phone: '', email: '', addr: '', dims: '', qty: 1, frete: '', photos: [], printer: '', h: '', m: '', work: '', extra: '', lines: [{ fil: '', g: '' }] },
   history: [],
   orders: [],
   cash: []
@@ -374,15 +376,17 @@ function compute(c) {
   const frete = num(c.frete);
   const target = num(c.target);
   // com preço desejado, o desconto não entra e a diferença vira ajuste (só na calculadora)
-  const disc = target ? null : S.discounts.find(d => d.id === c.disc);
-  const discPct = disc ? Math.min(disc.pct, 100) : 0;
+  // vários descontos somam entre si sobre o preço bruto (máximo 100%)
+  const discs = target ? [] : dIds(c).map(id => S.discounts.find(d => d.id === id)).filter(Boolean);
+  const discPct = Math.min(discs.reduce((a, d) => a + d.pct, 0), 100);
   const discount = gross * discPct / 100;
+  const discList = discs.map(d => ({ name: d.name, pct: d.pct, value: gross * d.pct / 100 }));
   const price = gross - discount;
   const rawTotal = price * qty + frete;
   const total = target || rawTotal;
   const unit = target ? (target - frete) / qty : price;
   const adj = total - rawTotal;
-  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, price, unit, qty, frete, total, adj, target,
+  return { hours, grams, kWh, mats, material, energy, machine, labor, extra, maint, finish, failure, cost, profit, fee, gross, discPct, discount, discList, price, unit, qty, frete, total, adj, target,
     printerName: printer ? printer.name : '' };
 }
 
@@ -394,9 +398,10 @@ function renderCalc() {
   $('#c-printer').innerHTML = S.printers.map(p => `<option value="${p.id}">${esc(p.name)} (${p.watts} W)</option>`).join('') || '<option value="">Cadastre em Config</option>';
   if (!S.printers.find(p => p.id === c.printer)) c.printer = S.printers[0]?.id || '';
   $('#c-printer').value = c.printer;
-  if (!S.discounts.find(d => d.id === c.disc)) c.disc = '';
-  $('#c-disc').innerHTML = '<option value="">Sem desconto</option>' + S.discounts.map(d => `<option value="${d.id}">${esc(d.name)} (${d.pct}%)</option>`).join('');
-  $('#c-disc').value = c.disc;
+  c.discs = dIds(c).filter(id => S.discounts.some(d => d.id === id)); delete c.disc;
+  $('#c-disc').innerHTML = '<option value="">+ Adicionar desconto…</option>' + S.discounts.map(d => `<option value="${d.id}">${esc(d.name)} (${d.pct}%)</option>`).join('');
+  $('#c-disc').value = '';
+  $('#c-discs').innerHTML = c.discs.map((id, i) => { const d = S.discounts.find(x => x.id === id); return `<div class="line"><span>${esc(d.name)} (${d.pct}%)</span><button class="del" data-dx="${i}">✕</button></div>`; }).join('') || '<div class="hint">Nenhum desconto aplicado.</div>';
   document.querySelectorAll('[data-f]').forEach(el => { el.value = c[el.dataset.f] || ''; });
   $('#c-photohint').textContent = c.photos.length ? `${c.photos.length} foto(s) anexada(s)` : 'Nenhuma foto anexada';
   $('#c-previews').innerHTML = c.photos.map((p, i) => `<div><img src="${p}" alt="Foto ${i + 1}"><button data-pi="${i}">✕</button></div>`).join('');
@@ -431,7 +436,7 @@ function renderResult() {
     ${L('<b>Custo total</b>', r.cost)}
     ${L('Lucro', r.profit, ` <small>(${S.settings.margin}%)</small>`)}
     ${r.fee ? L('Taxa / imposto', r.fee, ` <small>(${S.settings.fee}%)</small>`) : ''}
-    ${r.discount ? L('Desconto', -r.discount, ` <small>(${r.discPct}%)</small>`) : ''}
+    ${r.discList.map(d => L('Desconto: ' + esc(d.name), -d.value, ` <small>(${d.pct}%)</small>`)).join('')}
     ${r.frete ? L('Frete', r.frete) : ''}
     ${r.target ? L('Ajuste de preço (só você vê)', r.adj) : ''}
     ${r.target && r.total < r.cost * r.qty ? '<div class="hint">⚠️ O preço desejado está abaixo do custo.</div>' : ''}
@@ -440,9 +445,12 @@ function renderResult() {
 
 document.addEventListener('input', e => {
   const t = e.target, c = S.calc;
+  if (t.id === 'c-disc') {   // escolheu um desconto: soma à lista
+    if (t.value && !dIds(c).includes(t.value)) c.discs = [...dIds(c), t.value];
+    save(); renderCalc(); return;
+  }
   if (t.id === 'c-name') c.name = t.value;
   else if (t.id === 'c-printer') c.printer = t.value;
-  else if (t.id === 'c-disc') c.disc = t.value;
   else if (t.dataset && t.dataset.f) c[t.dataset.f] = t.value;
   else if (t.id === 'c-h') c.h = t.value;
   else if (t.id === 'c-m') c.m = t.value;
@@ -459,6 +467,10 @@ $('#c-addfil').onclick = () => {
 $('#c-fils').addEventListener('click', e => {
   const i = e.target.dataset.rm; if (i === undefined) return;
   S.calc.lines.splice(+i, 1); save(); renderCalc();
+});
+$('#c-discs').addEventListener('click', e => {
+  const i = e.target.dataset.dx; if (i === undefined) return;
+  S.calc.discs.splice(+i, 1); save(); renderCalc();
 });
 // editing: id do orçamento em edição; draft: rascunho guardado antes de editar
 let editing = null, draft = null;
@@ -760,7 +772,6 @@ async function exportPdf() {
   const r = compute(S.calc);
   if (!r.price) { alert('Preencha tempo e material antes de exportar.'); return; }
   const c = S.calc, tot = Math.round(r.hours * 60);
-  const disc = r.target ? null : S.discounts.find(d => d.id === c.disc);
   const info = [['Cliente', c.cname], ['Telefone', c.phone], ['E-mail', c.email], ['Endereço', c.addr]]
     .filter(([, v]) => v && v.trim());
   const unit = r.target ? r.unit : r.gross;
@@ -778,7 +789,7 @@ async function exportPdf() {
       </table>
       <table class="pdf-sum">
         <tr><td>Subtotal</td><td class="r">${brl(sub)}</td></tr>
-        ${disc ? `<tr><td>Desconto (${r.discPct}%): ${esc(disc.name)}</td><td class="r">-${brl(r.discount * r.qty)}</td></tr>` : ''}
+        ${r.discList.map(d => `<tr><td>Desconto (${d.pct}%): ${esc(d.name)}</td><td class="r">-${brl(d.value * r.qty)}</td></tr>`).join('')}
         <tr><td>Frete</td><td class="r">${r.frete ? brl(r.frete) : '-'}</td></tr>
         <tr class="final"><td>Total final</td><td class="r">${brl(r.total)}</td></tr>
       </table>
@@ -799,6 +810,7 @@ $('#c-pdf').onclick = exportPdf;
 /* ---------- Produção e caixa ---------- */
 const vl = o => o.valor ?? o.total;   // valor a receber (pode ter desconto final)
 const concluido = o => o.pronto && o.pago;   // pronto e pago: sai da produção e vai para o caixa
+const fmtData = iso => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
 function approve(id) {
   const h = S.history.find(x => x.id === id);
@@ -817,7 +829,7 @@ function renderProd() {
   const flag = (o, k, label) => `<button class="${o[k] ? '' : 'sec'}" data-ok="${o.id}" data-k="${k}">${o[k] ? '✓ ' : ''}${label}</button>`;
   $('#p-queue').innerHTML = fila.length ? fila.map((o, i) => `
     <div class="item">
-      <div class="info"><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}</small></div>
+      <div class="info"><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}</small><small>Início da produção: ${fmtData(o.approved)}</small></div>
       <div class="flags">${flag(o, 'pronto', 'Pronto')}${flag(o, 'entregue', 'Entregue')}${flag(o, 'pago', 'Pago')}
         <input class="oval" data-oval="${o.id}" type="number" inputmode="decimal" min="0" step="any" value="${vl(o)}" title="Valor a receber">
         <button class="del" data-odel="${o.id}">Cancelar</button></div>
@@ -826,7 +838,11 @@ function renderProd() {
 }
 $('#p-queue').addEventListener('click', e => {
   const { ok, k, odel } = e.target.dataset;
-  if (ok) { const o = S.orders.find(x => x.id === ok); o[k] = !o[k]; save(); renderProd(); }
+  if (ok) {
+    const o = S.orders.find(x => x.id === ok); o[k] = !o[k];
+    if (k === 'pronto' || k === 'pago') o[k + 'Em'] = o[k] ? new Date().toISOString() : null;   // data para o histórico
+    save(); renderProd();
+  }
   if (odel && confirm('Cancelar este pedido? O orçamento continua no histórico.')) {
     S.orders = S.orders.filter(x => x.id !== odel); save(); renderProd(); renderHist();
   }
@@ -853,12 +869,14 @@ function renderCaixa() {
     <div class="line"><span>Gastos lançados</span><span>${brl(gastos)}</span></div>
     <div class="total"><span>Saldo (recebido − gastos)</span><span class="big">${brl(recebido - gastos)}</span></div>
     <div class="hint">Custo estimado de material e energia dos pedidos: ${brl(custo)}. É só informativo.</div>`;
-  const feitos = S.orders.filter(concluido);
-  $('#x-orders').innerHTML = feitos.length ? feitos.map(o => `
+  // recebimentos: todo pedido pago, do mais recente para o mais antigo
+  const recebidos = S.orders.filter(o => o.pago).sort((a, b) => (b.pagoEm || '').localeCompare(a.pagoEm || ''));
+  $('#x-orders').innerHTML = recebidos.length ? recebidos.map(o => `
     <div class="item">
-      <div class="info"><b>${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}${vl(o) < o.total ? ' · desconto final' : ''}</small></div>
+      <div class="info"><b>${esc(o.name)}</b><small>${esc(o.client || 'Sem cliente')} · total ${brl(o.total)}${vl(o) < o.total ? ' · desconto final' : ''}</small>
+        <small>Início: ${fmtData(o.approved)} · Pronto: ${fmtData(o.prontoEm)} · Pago: ${fmtData(o.pagoEm)}</small></div>
       <input class="oval" data-oval="${o.id}" type="number" inputmode="decimal" min="0" step="any" value="${vl(o)}" title="Valor recebido">
-    </div>`).join('') : '<div class="empty">Nenhum pedido concluído ainda.</div>';
+    </div>`).join('') : '<div class="empty">Nenhum recebimento ainda.</div>';
   $('#x-list').innerHTML = S.cash.slice().reverse().map(x => `
     <div class="item">
       <div class="info"><b>${esc(x.desc)}</b><small>${x.kind === 'in' ? 'Entrada' : 'Gasto'} · ${new Date(x.date).toLocaleDateString('pt-BR')}</small></div>
